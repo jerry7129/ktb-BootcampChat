@@ -82,7 +82,15 @@ jobs:
           install -d -m 700 ~/.ssh
           printf '%s\n' "$SSH_PRIVATE_KEY" | tr -d '\r' > ~/.ssh/id_ec2
           chmod 600 ~/.ssh/id_ec2
-          ssh-keyscan -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts
+          if ! timeout 15 bash -c ">/dev/tcp/$DEPLOY_HOST/22"; then
+            echo "Cannot reach $DEPLOY_HOST:22 from this GitHub runner." >&2
+            echo "Verify the EC2 public address, SSH security-group rule, route, and sshd." >&2
+            exit 1
+          fi
+          if ! ssh-keyscan -T 10 -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts; then
+            echo "SSH is reachable but its host key could not be read from $DEPLOY_HOST." >&2
+            exit 1
+          fi
 
       - name: Bootstrap frontend runtime and service
         shell: bash
@@ -132,7 +140,15 @@ jobs:
           install -d -m 700 ~/.ssh
           printf '%s\n' "$SSH_PRIVATE_KEY" | tr -d '\r' > ~/.ssh/id_ec2
           chmod 600 ~/.ssh/id_ec2
-          ssh-keyscan -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts
+          if ! timeout 15 bash -c ">/dev/tcp/$DEPLOY_HOST/22"; then
+            echo "Cannot reach $DEPLOY_HOST:22 from this GitHub runner." >&2
+            echo "Verify the EC2 public address, SSH security-group rule, route, and sshd." >&2
+            exit 1
+          fi
+          if ! ssh-keyscan -T 10 -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts; then
+            echo "SSH is reachable but its host key could not be read from $DEPLOY_HOST." >&2
+            exit 1
+          fi
 
       - name: Upload backend environment
         shell: bash
