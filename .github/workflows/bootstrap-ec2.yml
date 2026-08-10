@@ -12,6 +12,10 @@ on:
           - frontend
           - backend
           - all
+      hosts:
+        description: 'Optional JSON inventory for new nodes only; empty uses EC2_HOSTS'
+        required: false
+        type: string
 
 permissions:
   contents: read
@@ -32,10 +36,10 @@ jobs:
         id: hosts
         shell: bash
         env:
-          EC2_HOSTS: ${{ vars.EC2_HOSTS }}
+          TARGET_HOSTS: ${{ inputs.hosts || vars.EC2_HOSTS }}
         run: |
           set -euo pipefail
-          : "${EC2_HOSTS:?Repository variable EC2_HOSTS is required}"
+          : "${TARGET_HOSTS:?Provide hosts input or configure repository variable EC2_HOSTS}"
 
           normalized="$(jq -ce '
             if type == "array" then
@@ -47,7 +51,7 @@ jobs:
             else
               error("EC2_HOSTS must be a JSON array or an object with frontend/backend arrays")
             end
-          ' <<<"$EC2_HOSTS")"
+          ' <<<"$TARGET_HOSTS")"
 
           frontend_hosts="$(jq -ce '.frontend' <<<"$normalized")"
           backend_hosts="$(jq -ce '.backend' <<<"$normalized")"

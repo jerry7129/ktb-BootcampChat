@@ -47,6 +47,16 @@ GitHub 저장소에서 **Actions → Bootstrap EC2 → Run workflow**를 열고 
 선택하면 `EC2_HOSTS`의 frontend/backend 인벤토리별로 필요한 초기화가 실행됩니다.
 역할별 초기화만 필요할 때는 `frontend` 또는 `backend`를 선택합니다.
 
+기존 서비스 노드에 영향을 주지 않고 새 EC2만 초기화하려면 Run workflow의 `hosts`
+입력에 신규 노드만 담은 JSON을 입력합니다. 예:
+
+```json
+{"frontend":["NEW_FRONTEND_HOST"],"backend":["NEW_BACKEND_HOST_1","NEW_BACKEND_HOST_2"]}
+```
+
+초기화와 헬스체크가 끝난 뒤 일반 배포용 `EC2_HOSTS`에는 기존·신규 전체 노드를
+등록합니다. 그래야 이후 배포가 모든 운영 인스턴스에 동일하게 적용됩니다.
+
 Maven, pnpm 및 전체 소스는 EC2에 설치하지 않습니다. 빌드는 GitHub Actions에서
 수행하고 EC2는 런타임과 산출물만 사용합니다.
 
