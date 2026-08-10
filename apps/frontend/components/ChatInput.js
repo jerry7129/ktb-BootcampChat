@@ -316,6 +316,11 @@ const ChatInput = forwardRef(({
           return;
       }
     } else if (e.key === 'Enter' && !e.shiftKey) {
+      // 한글/일본어/중국어 등 IME로 글자를 조합하는 중에 눌린 Enter는 무시한다.
+      // 조합이 끝나기 전에 전송하면 메시지가 쪼개져서 두 번 보내진다.
+      if (e.nativeEvent.isComposing || e.keyCode === 229) {
+        return;
+      }
       e.preventDefault();
       if (message.trim() || files.length > 0) {
         handleSubmit(e);

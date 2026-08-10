@@ -11,7 +11,6 @@ import io.micrometer.core.instrument.MeterRegistry;
 import java.time.Duration;
 import java.util.Map;
 import java.util.Set;
-import java.util.UUID;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
@@ -137,32 +136,35 @@ public class ConnectionLoginHandler {
     }
     
     /**
-     * TODO 멀티 클러스터에서 동작 안함
-     * socketIOServer.getRoomOperations("user:" + userId) 로 처리 변경.
+     * "user:{userId}" 룸으로 브로드캐스트한다 (RedissonStoreFactory 덕분에
+     * 룸 멤버십이 인스턴스 간에 공유돼서 멀티 클러스터에서도 동작함).
+     * 이전에는 socketIOServer.getClient(UUID)로 현재 JVM에 붙은 소켓만
+     * 찾았는데, 그러면 (1) 다른 노드에 붙은 예전 세션은 못 찾고
+     * (2) Redis 조회 지연 때문에 방금 끊긴 연결을 아직 살아있다고
+     * 착각하는 레이스가 생겼다. 방 브로드캐스트는 방금 연결한 client만
+     * 제외하고 보내므로, 예전 연결이 이미 나갔으면 그냥 아무도 못 받고
+     * 끝난다 (안전), 실제로 살아있으면 어느 노드에 있든 정확히 받는다.
      */
     private void notifyDuplicateLogin(SocketIOClient client, String userId) {
         var socketUser = connectedUsers.get(userId);
         if (socketUser == null) {
             return;
         }
-        String existingSocketId = socketUser.socketId();
-        SocketIOClient existingClient = socketIOServer.getClient(UUID.fromString(existingSocketId));
-        if (existingClient == null) {
-            return;
-        }
-        
+
+        var userRoom = socketIOServer.getRoomOperations("user:" + userId);
+
         // Send duplicate login notification
-        existingClient.sendEvent(DUPLICATE_LOGIN, Map.of(
+        userRoom.sendEvent(DUPLICATE_LOGIN, client, Map.of(
                 "type", "new_login_attempt",
                 "deviceInfo", client.getHandshakeData().getHttpHeaders().get("User-Agent"),
                 "ipAddress", client.getRemoteAddress().toString(),
                 "timestamp", System.currentTimeMillis()
         ));
-        
+
         new Thread(() -> {
             try {
                 Thread.sleep(Duration.ofSeconds(10));
-                existingClient.sendEvent(SESSION_ENDED, Map.of(
+                userRoom.sendEvent(SESSION_ENDED, client, Map.of(
                         "reason", "duplicate_login",
                         "message", "다른 기기에서 로그인하여 현재 세션이 종료되었습니다."
                 ));
