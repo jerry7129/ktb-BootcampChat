@@ -73,7 +73,7 @@ install_frontend_unit() {
 
   frontend_root="$deploy_home/ktb-chat-frontend"
   install -d -o "$deploy_user" -g "$deploy_user" \
-    "$frontend_root" "$frontend_root/releases"
+    "$frontend_root" "$frontend_root/releases" "$frontend_root/logs"
 
   unit_file="$(mktemp)"
   cat >"$unit_file" <<EOF
@@ -96,6 +96,8 @@ TimeoutStopSec=30
 KillSignal=SIGTERM
 NoNewPrivileges=true
 PrivateTmp=true
+StandardOutput=append:$frontend_root/logs/systemd.log
+StandardError=append:$frontend_root/logs/systemd.log
 
 [Install]
 WantedBy=multi-user.target
@@ -117,7 +119,7 @@ install_backend_unit() {
 
   backend_root="$deploy_home/ktb-chat-backend"
   install -d -o "$deploy_user" -g "$deploy_user" \
-    "$backend_root" "$backend_root/releases" "$backend_root/uploads"
+    "$backend_root" "$backend_root/releases" "$backend_root/uploads" "$backend_root/logs"
 
   unit_file="$(mktemp)"
   cat >"$unit_file" <<EOF
@@ -140,6 +142,8 @@ SuccessExitStatus=143
 KillSignal=SIGTERM
 NoNewPrivileges=true
 PrivateTmp=true
+StandardOutput=append:$backend_root/logs/systemd.log
+StandardError=append:$backend_root/logs/systemd.log
 
 [Install]
 WantedBy=multi-user.target

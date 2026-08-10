@@ -335,6 +335,7 @@ jobs:
           if ! (cd "$deploy_root/current" && ./restart.sh); then
             echo "Frontend service diagnostics:" >&2
             systemctl status ktb-frontend.service --no-pager --lines=100 || true
+            tail -n 100 "$deploy_root/logs/systemd.log" || true
             if [[ -n "$previous_release" && -d "$previous_release" ]]; then
               echo "Frontend restart failed; rolling back to $previous_release" >&2
               ln -sfn "$previous_release" "$deploy_root/current.next"
@@ -435,6 +436,7 @@ jobs:
           if ! (cd "$deploy_root/current" && ./app-control.sh restart); then
             echo "Backend service diagnostics:" >&2
             systemctl status ktb-backend.service --no-pager --lines=100 || true
+            tail -n 100 "$deploy_root/logs/systemd.log" || true
             if [[ -n "$previous_release" && -d "$previous_release" ]]; then
               echo "Backend restart failed; rolling back to $previous_release" >&2
               ln -sfn "$previous_release" "$deploy_root/current.next"
