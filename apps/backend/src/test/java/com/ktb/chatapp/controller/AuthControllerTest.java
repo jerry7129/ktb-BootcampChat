@@ -8,6 +8,7 @@ import com.ktb.chatapp.service.SessionCreationResult;
 import com.ktb.chatapp.service.SessionMetadata;
 import com.ktb.chatapp.service.SessionService;
 import org.junit.jupiter.api.Test;
+import org.redisson.api.RedissonClient;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -39,6 +40,9 @@ public class AuthControllerTest {
 
     @MockitoBean
     private SessionService sessionService;
+
+    @MockitoBean
+    private RedissonClient redissonClient;
 
     @Test
     @WithAnonymousUser
