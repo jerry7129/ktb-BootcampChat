@@ -1,0 +1,400 @@
+name: Build and deploy
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'apps/frontend/**'
+      - 'apps/backend/**'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+      - 'pnpm-workspace.yaml'
+      - '.github/workflows/deploy.yml'
+  workflow_dispatch:
+    inputs:
+      component:
+        description: Component to deploy
+        required: true
+        default: both
+        type: choice
+        options:
+          - both
+          - frontend
+          - backend
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production-deploy
+  cancel-in-progress: false
+
+env:
+  FRONTEND_DEPLOY_ROOT: /home/${{ vars.EC2_USERNAME }}/ktb-chat-frontend
+  BACKEND_DEPLOY_ROOT: /home/${{ vars.EC2_USERNAME }}/ktb-chat-backend
+
+jobs:
+  changes:
+    name: Detect changed components
+    runs-on: ubuntu-latest
+    outputs:
+      frontend: ${{ steps.changes.outputs.frontend }}
+      backend: ${{ steps.changes.outputs.backend }}
+      frontend_hosts: ${{ steps.hosts.outputs.frontend_hosts }}
+      backend_hosts: ${{ steps.hosts.outputs.backend_hosts }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Detect frontend and backend changes
+        id: changes
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BEFORE_SHA: ${{ github.event.before }}
+          COMPONENT: ${{ inputs.component }}
+        run: |
+          set -euo pipefail
+
+          frontend=false
+          backend=false
+
+          if [[ "$EVENT_NAME" == "workflow_dispatch" ]]; then
+            case "$COMPONENT" in
+              both)
+                frontend=true
+                backend=true
+                ;;
+              frontend)
+                frontend=true
+                ;;
+              backend)
+                backend=true
+                ;;
+              *)
+                echo "Unsupported component: $COMPONENT" >&2
+                exit 1
+                ;;
+            esac
+          else
+            if [[ -z "$BEFORE_SHA" || "$BEFORE_SHA" =~ ^0+$ ]]; then
+              changed_files="$(git diff-tree --root --no-commit-id --name-only -r "$GITHUB_SHA")"
+            else
+              changed_files="$(git diff --name-only "$BEFORE_SHA" "$GITHUB_SHA")"
+            fi
+
+            echo "Changed files:"
+            printf '%s\n' "$changed_files"
+
+            if grep -Eq '^(apps/frontend/|package\.json$|pnpm-lock\.yaml$|pnpm-workspace\.yaml$)' <<<"$changed_files"; then
+              frontend=true
+            fi
+
+            if grep -Eq '^apps/backend/' <<<"$changed_files"; then
+              backend=true
+            fi
+          fi
+
+          echo "frontend=$frontend" >> "$GITHUB_OUTPUT"
+          echo "backend=$backend" >> "$GITHUB_OUTPUT"
+          echo "Deploy frontend: $frontend"
+          echo "Deploy backend: $backend"
+
+      - name: Validate deployment hosts
+        id: hosts
+        shell: bash
+        env:
+          EC2_HOSTS: ${{ vars.EC2_HOSTS }}
+        run: |
+          set -euo pipefail
+          : "${EC2_HOSTS:?Repository variable EC2_HOSTS is required}"
+
+          # Supported forms:
+          #   Shared fleet: ["host-1", "host-2"]
+          #   Separate fleets: {"frontend":["host-1"],"backend":["host-2","host-3"]}
+          normalized="$({
+            jq -ce '
+              if type == "array" then
+                {frontend: ., backend: .}
+              elif type == "object"
+                   and (.frontend | type == "array")
+                   and (.backend | type == "array") then
+                {frontend: .frontend, backend: .backend}
+              else
+                error("EC2_HOSTS must be a JSON array or an object with frontend/backend arrays")
+              end
+            ' <<<"$EC2_HOSTS"
+          })"
+
+          frontend_hosts="$(jq -ce '.frontend' <<<"$normalized")"
+          backend_hosts="$(jq -ce '.backend' <<<"$normalized")"
+
+          if [[ "${{ steps.changes.outputs.frontend }}" == "true" ]] && [[ "$(jq 'length' <<<"$frontend_hosts")" -eq 0 ]]; then
+            echo "EC2_HOSTS.frontend must contain at least one host" >&2
+            exit 1
+          fi
+
+          if [[ "${{ steps.changes.outputs.backend }}" == "true" ]] && [[ "$(jq 'length' <<<"$backend_hosts")" -eq 0 ]]; then
+            echo "EC2_HOSTS.backend must contain at least one host" >&2
+            exit 1
+          fi
+
+          echo "frontend_hosts=$frontend_hosts" >> "$GITHUB_OUTPUT"
+          echo "backend_hosts=$backend_hosts" >> "$GITHUB_OUTPUT"
+
+  build-frontend:
+    name: Build frontend
+    needs: changes
+    if: needs.changes.outputs.frontend == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.28.2
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Test frontend
+        run: pnpm --dir apps/frontend test
+
+      - name: Lint frontend
+        run: pnpm --dir apps/frontend lint
+
+      - name: Create production environment
+        shell: bash
+        env:
+          API_URL: ${{ vars.FRONTEND_API_URL }}
+          SOCKET_URL: ${{ vars.FRONTEND_SOCKET_URL }}
+        run: |
+          set -euo pipefail
+          : "${API_URL:?Repository variable FRONTEND_API_URL is required}"
+          : "${SOCKET_URL:?Repository variable FRONTEND_SOCKET_URL is required}"
+
+          rm -f apps/frontend/.env.local
+          printf 'NEXT_PUBLIC_API_URL=%s\nNEXT_PUBLIC_SOCKET_URL=%s\n' \
+            "$API_URL" "$SOCKET_URL" > apps/frontend/.env.production
+
+      - name: Build standalone frontend
+        run: pnpm --dir apps/frontend run build:production
+
+      - name: Package frontend release
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist/frontend
+          cp -a apps/frontend/.next/standalone/. dist/frontend/
+          install -m 755 apps/frontend/restart.sh dist/frontend/restart.sh
+          tar -C dist/frontend -czf frontend-release.tar.gz .
+
+      - name: Upload frontend artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-release-${{ github.sha }}
+          path: frontend-release.tar.gz
+          if-no-files-found: error
+          retention-days: 7
+
+  build-backend:
+    name: Build backend
+    needs: changes
+    if: needs.changes.outputs.backend == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+          cache: maven
+
+      - name: Build and test backend
+        working-directory: apps/backend
+        run: |
+          chmod +x mvnw
+          ./mvnw --batch-mode clean package
+
+      - name: Package backend release
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist/backend/target
+          install -m 644 \
+            apps/backend/target/ktb-chat-backend-0.0.1-SNAPSHOT.jar \
+            dist/backend/target/ktb-chat-backend-0.0.1-SNAPSHOT.jar
+          install -m 755 apps/backend/app-control.sh dist/backend/app-control.sh
+          tar -C dist/backend -czf backend-release.tar.gz .
+
+      - name: Upload backend artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-release-${{ github.sha }}
+          path: backend-release.tar.gz
+          if-no-files-found: error
+          retention-days: 7
+
+  deploy-frontend:
+    name: Deploy frontend to ${{ matrix.host }}
+    needs:
+      - changes
+      - build-frontend
+    if: needs.changes.outputs.frontend == 'true'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        host: ${{ fromJSON(needs.changes.outputs.frontend_hosts) }}
+    steps:
+      - name: Download frontend artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: frontend-release-${{ github.sha }}
+
+      - name: Configure SSH
+        shell: bash
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.PEM }}
+          DEPLOY_HOST: ${{ matrix.host }}
+        run: |
+          set -euo pipefail
+          : "${SSH_PRIVATE_KEY:?Repository secret PEM is required}"
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$SSH_PRIVATE_KEY" | tr -d '\r' > ~/.ssh/id_ec2
+          chmod 600 ~/.ssh/id_ec2
+          ssh-keyscan -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts
+
+      - name: Upload and activate frontend release
+        shell: bash
+        env:
+          DEPLOY_HOST: ${{ matrix.host }}
+          DEPLOY_USER: ${{ vars.EC2_USERNAME }}
+        run: |
+          set -euo pipefail
+          : "${DEPLOY_USER:?Repository variable EC2_USERNAME is required}"
+
+          remote_archive="/tmp/ktb-frontend-${GITHUB_SHA}.tar.gz"
+          scp -i ~/.ssh/id_ec2 frontend-release.tar.gz \
+            "$DEPLOY_USER@$DEPLOY_HOST:$remote_archive"
+
+          ssh -i ~/.ssh/id_ec2 "$DEPLOY_USER@$DEPLOY_HOST" \
+            'bash -s' -- "$FRONTEND_DEPLOY_ROOT" "$GITHUB_SHA" "$remote_archive" <<'REMOTE'
+          set -euo pipefail
+          deploy_root="$1"
+          release_id="$2"
+          archive="$3"
+          release_dir="$deploy_root/releases/$release_id"
+          previous_release="$(readlink -f "$deploy_root/current" 2>/dev/null || true)"
+
+          mkdir -p "$release_dir"
+          tar -xzf "$archive" -C "$release_dir"
+          rm -f "$archive"
+          chmod +x "$release_dir/restart.sh"
+
+          ln -sfn "$release_dir" "$deploy_root/current.next"
+          mv -Tf "$deploy_root/current.next" "$deploy_root/current"
+
+          if ! (cd "$deploy_root/current" && ./restart.sh); then
+            if [[ -n "$previous_release" && -d "$previous_release" ]]; then
+              echo "Frontend restart failed; rolling back to $previous_release" >&2
+              ln -sfn "$previous_release" "$deploy_root/current.next"
+              mv -Tf "$deploy_root/current.next" "$deploy_root/current"
+              (cd "$deploy_root/current" && ./restart.sh) || true
+            fi
+            exit 1
+          fi
+          REMOTE
+
+  deploy-backend:
+    name: Deploy backend to ${{ matrix.host }}
+    needs:
+      - changes
+      - build-backend
+    if: needs.changes.outputs.backend == 'true'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        host: ${{ fromJSON(needs.changes.outputs.backend_hosts) }}
+    steps:
+      - name: Download backend artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: backend-release-${{ github.sha }}
+
+      - name: Configure SSH
+        shell: bash
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.PEM }}
+          DEPLOY_HOST: ${{ matrix.host }}
+        run: |
+          set -euo pipefail
+          : "${SSH_PRIVATE_KEY:?Repository secret PEM is required}"
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$SSH_PRIVATE_KEY" | tr -d '\r' > ~/.ssh/id_ec2
+          chmod 600 ~/.ssh/id_ec2
+          ssh-keyscan -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts
+
+      - name: Upload and activate backend release
+        shell: bash
+        env:
+          DEPLOY_HOST: ${{ matrix.host }}
+          DEPLOY_USER: ${{ vars.EC2_USERNAME }}
+        run: |
+          set -euo pipefail
+          : "${DEPLOY_USER:?Repository variable EC2_USERNAME is required}"
+
+          remote_archive="/tmp/ktb-backend-${GITHUB_SHA}.tar.gz"
+          scp -i ~/.ssh/id_ec2 backend-release.tar.gz \
+            "$DEPLOY_USER@$DEPLOY_HOST:$remote_archive"
+
+          ssh -i ~/.ssh/id_ec2 "$DEPLOY_USER@$DEPLOY_HOST" \
+            'bash -s' -- "$BACKEND_DEPLOY_ROOT" "$GITHUB_SHA" "$remote_archive" <<'REMOTE'
+          set -euo pipefail
+          deploy_root="$1"
+          release_id="$2"
+          archive="$3"
+          release_dir="$deploy_root/releases/$release_id"
+          previous_release="$(readlink -f "$deploy_root/current" 2>/dev/null || true)"
+
+          mkdir -p "$release_dir/logs" "$deploy_root/uploads"
+          tar -xzf "$archive" -C "$release_dir"
+          rm -f "$archive"
+          chmod +x "$release_dir/app-control.sh"
+
+          if [[ -f "$deploy_root/.env" ]]; then
+            ln -sfn "$deploy_root/.env" "$release_dir/.env"
+          else
+            echo "Missing persistent backend environment file: $deploy_root/.env" >&2
+            exit 1
+          fi
+          ln -sfn "$deploy_root/uploads" "$release_dir/uploads"
+
+          ln -sfn "$release_dir" "$deploy_root/current.next"
+          mv -Tf "$deploy_root/current.next" "$deploy_root/current"
+
+          if ! (cd "$deploy_root/current" && ./app-control.sh restart); then
+            if [[ -n "$previous_release" && -d "$previous_release" ]]; then
+              echo "Backend restart failed; rolling back to $previous_release" >&2
+              ln -sfn "$previous_release" "$deploy_root/current.next"
+              mv -Tf "$deploy_root/current.next" "$deploy_root/current"
+              (cd "$deploy_root/current" && ./app-control.sh restart) || true
+            fi
+            exit 1
+          fi
+          REMOTE
