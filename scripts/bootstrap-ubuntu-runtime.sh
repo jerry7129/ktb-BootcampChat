@@ -30,8 +30,26 @@ fi
 
 install_base_packages() {
   export DEBIAN_FRONTEND=noninteractive
-  apt-get update
-  apt-get install -y --no-install-recommends ca-certificates curl unzip zip
+  wait_for_package_manager
+  apt-get -o DPkg::Lock::Timeout=300 update
+  apt-get -o DPkg::Lock::Timeout=300 install -y --no-install-recommends ca-certificates curl unzip zip
+}
+
+wait_for_package_manager() {
+  local waited=0
+  local lock_files=(/var/lib/dpkg/lock-frontend /var/lib/dpkg/lock /var/lib/apt/lists/lock /var/cache/apt/archives/lock)
+
+  while fuser "${lock_files[@]}" >/dev/null 2>&1; do
+    if (( waited >= 300 )); then
+      echo "Timed out waiting for Ubuntu package-manager lock after 300 seconds." >&2
+      exit 1
+    fi
+    echo "Waiting for unattended-upgrades to release the package-manager lock (${waited}s elapsed)..."
+    sleep 5
+    ((waited += 5))
+  done
+
+  dpkg --configure -a
 }
 
 install_node() {
@@ -44,8 +62,9 @@ install_node() {
 
   # NodeSource supplies the maintained Node.js 22 Ubuntu package. The deploy
   # service uses the resulting /usr/bin/node path, not a shell-only nvm setup.
+  wait_for_package_manager
   curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
-  apt-get install -y --no-install-recommends nodejs
+  apt-get -o DPkg::Lock::Timeout=300 install -y --no-install-recommends nodejs
   echo "Installed Node.js $(node --version)."
 }
 
