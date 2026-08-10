@@ -22,6 +22,10 @@ on:
           - both
           - frontend
           - backend
+      hosts:
+        description: 'Optional JSON inventory for this deployment only; empty uses EC2_HOSTS'
+        required: false
+        type: string
 
 permissions:
   contents: read
@@ -107,10 +111,10 @@ jobs:
         id: hosts
         shell: bash
         env:
-          EC2_HOSTS: ${{ vars.EC2_HOSTS }}
+          TARGET_HOSTS: ${{ inputs.hosts || vars.EC2_HOSTS }}
         run: |
           set -euo pipefail
-          : "${EC2_HOSTS:?Repository variable EC2_HOSTS is required}"
+          : "${TARGET_HOSTS:?Provide hosts input or configure repository variable EC2_HOSTS}"
 
           # Supported forms:
           #   Shared fleet: ["host-1", "host-2"]
@@ -126,7 +130,7 @@ jobs:
               else
                 error("EC2_HOSTS must be a JSON array or an object with frontend/backend arrays")
               end
-            ' <<<"$EC2_HOSTS"
+            ' <<<"$TARGET_HOSTS"
           })"
 
           frontend_hosts="$(jq -ce '.frontend' <<<"$normalized")"

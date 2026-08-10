@@ -152,6 +152,10 @@ sudo systemctl cat ktb-backend.service
 워크플로우를 `main` 브랜치에 반영한 후 GitHub 저장소의 **Actions → Build and
 deploy → Run workflow**에서 먼저 `frontend`, 다음으로 `backend`를 실행합니다.
 
+기존 인스턴스에 영향을 주지 않고 새 노드만 검증할 때는 `hosts` 입력에 Bootstrap에
+사용한 신규 노드 JSON을 그대로 넣고 `component: both`를 선택합니다. 검증이 끝난 후
+`EC2_HOSTS` Repository Variable에 전체 운영 노드를 추가합니다.
+
 배포 후 EC2 내부 확인:
 
 ```bash
