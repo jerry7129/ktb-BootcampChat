@@ -1,0 +1,173 @@
+name: Bootstrap EC2
+
+on:
+  workflow_dispatch:
+    inputs:
+      component:
+        description: EC2 role to initialize
+        required: true
+        default: all
+        type: choice
+        options:
+          - frontend
+          - backend
+          - all
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ec2-bootstrap
+  cancel-in-progress: false
+
+jobs:
+  hosts:
+    name: Validate deployment hosts
+    runs-on: ubuntu-latest
+    outputs:
+      frontend: ${{ steps.hosts.outputs.frontend }}
+      backend: ${{ steps.hosts.outputs.backend }}
+    steps:
+      - name: Normalize EC2 host inventory
+        id: hosts
+        shell: bash
+        env:
+          EC2_HOSTS: ${{ vars.EC2_HOSTS }}
+        run: |
+          set -euo pipefail
+          : "${EC2_HOSTS:?Repository variable EC2_HOSTS is required}"
+
+          normalized="$(jq -ce '
+            if type == "array" then
+              {frontend: ., backend: .}
+            elif type == "object"
+                 and (.frontend | type == "array")
+                 and (.backend | type == "array") then
+              {frontend: .frontend, backend: .backend}
+            else
+              error("EC2_HOSTS must be a JSON array or an object with frontend/backend arrays")
+            end
+          ' <<<"$EC2_HOSTS")"
+
+          frontend_hosts="$(jq -ce '.frontend' <<<"$normalized")"
+          backend_hosts="$(jq -ce '.backend' <<<"$normalized")"
+          echo "frontend=$frontend_hosts" >> "$GITHUB_OUTPUT"
+          echo "backend=$backend_hosts" >> "$GITHUB_OUTPUT"
+
+  bootstrap-frontend:
+    name: Bootstrap frontend on ${{ matrix.host }}
+    needs: hosts
+    if: inputs.component == 'frontend' || inputs.component == 'all'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        host: ${{ fromJSON(needs.hosts.outputs.frontend) }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Configure SSH
+        shell: bash
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.PEM }}
+          DEPLOY_HOST: ${{ matrix.host }}
+        run: |
+          set -euo pipefail
+          : "${SSH_PRIVATE_KEY:?Repository secret PEM is required}"
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$SSH_PRIVATE_KEY" | tr -d '\r' > ~/.ssh/id_ec2
+          chmod 600 ~/.ssh/id_ec2
+          ssh-keyscan -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts
+
+      - name: Bootstrap frontend runtime and service
+        shell: bash
+        env:
+          DEPLOY_HOST: ${{ matrix.host }}
+          DEPLOY_USER: ${{ vars.EC2_USERNAME }}
+        run: |
+          set -euo pipefail
+          : "${DEPLOY_USER:?Repository variable EC2_USERNAME is required}"
+
+          scp -i ~/.ssh/id_ec2 \
+            scripts/bootstrap-ubuntu-runtime.sh scripts/provision-ec2-systemd.sh \
+            "$DEPLOY_USER@$DEPLOY_HOST:/tmp/"
+
+          ssh -i ~/.ssh/id_ec2 "$DEPLOY_USER@$DEPLOY_HOST" \
+            'bash -s' -- "$DEPLOY_USER" <<'REMOTE'
+          set -euo pipefail
+          deploy_user="$1"
+          chmod +x /tmp/bootstrap-ubuntu-runtime.sh /tmp/provision-ec2-systemd.sh
+          sudo /tmp/bootstrap-ubuntu-runtime.sh frontend "$deploy_user"
+          sudo env NODE_BIN="$(command -v node)" /tmp/provision-ec2-systemd.sh frontend "$deploy_user"
+          sudo systemd-analyze verify /etc/systemd/system/ktb-frontend.service
+          sudo systemctl is-enabled ktb-frontend.service
+          REMOTE
+
+  bootstrap-backend:
+    name: Bootstrap backend on ${{ matrix.host }}
+    needs: hosts
+    if: inputs.component == 'backend' || inputs.component == 'all'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        host: ${{ fromJSON(needs.hosts.outputs.backend) }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Configure SSH
+        shell: bash
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.PEM }}
+          DEPLOY_HOST: ${{ matrix.host }}
+        run: |
+          set -euo pipefail
+          : "${SSH_PRIVATE_KEY:?Repository secret PEM is required}"
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$SSH_PRIVATE_KEY" | tr -d '\r' > ~/.ssh/id_ec2
+          chmod 600 ~/.ssh/id_ec2
+          ssh-keyscan -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts
+
+      - name: Upload backend environment
+        shell: bash
+        env:
+          BACKEND_ENV: ${{ secrets.BACKEND_ENV }}
+          DEPLOY_HOST: ${{ matrix.host }}
+          DEPLOY_USER: ${{ vars.EC2_USERNAME }}
+        run: |
+          set -euo pipefail
+          : "${BACKEND_ENV:?Repository secret BACKEND_ENV is required}"
+          : "${DEPLOY_USER:?Repository variable EC2_USERNAME is required}"
+          umask 077
+          printf '%s' "$BACKEND_ENV" > backend.env
+          scp -i ~/.ssh/id_ec2 backend.env "$DEPLOY_USER@$DEPLOY_HOST:/tmp/ktb-backend.env"
+          rm -f backend.env
+
+      - name: Bootstrap backend runtime and service
+        shell: bash
+        env:
+          DEPLOY_HOST: ${{ matrix.host }}
+          DEPLOY_USER: ${{ vars.EC2_USERNAME }}
+        run: |
+          set -euo pipefail
+          scp -i ~/.ssh/id_ec2 \
+            scripts/bootstrap-ubuntu-runtime.sh scripts/provision-ec2-systemd.sh \
+            "$DEPLOY_USER@$DEPLOY_HOST:/tmp/"
+
+          ssh -i ~/.ssh/id_ec2 "$DEPLOY_USER@$DEPLOY_HOST" \
+            'bash -s' -- "$DEPLOY_USER" <<'REMOTE'
+          set -euo pipefail
+          deploy_user="$1"
+          deploy_home="$(getent passwd "$deploy_user" | cut -d: -f6)"
+          chmod +x /tmp/bootstrap-ubuntu-runtime.sh /tmp/provision-ec2-systemd.sh
+          sudo /tmp/bootstrap-ubuntu-runtime.sh backend "$deploy_user"
+          java_bin="$(runuser -u "$deploy_user" -- bash -lc 'source "$HOME/.sdkman/bin/sdkman-init.sh" && command -v java')"
+          sudo env JAVA_BIN="$java_bin" /tmp/provision-ec2-systemd.sh backend "$deploy_user"
+          sudo install -o "$deploy_user" -g "$deploy_user" -m 600 \
+            /tmp/ktb-backend.env "$deploy_home/ktb-chat-backend/.env"
+          sudo rm -f /tmp/ktb-backend.env
+          sudo systemd-analyze verify /etc/systemd/system/ktb-backend.service
+          sudo systemctl is-enabled ktb-backend.service
+          REMOTE

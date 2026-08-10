@@ -16,20 +16,41 @@ GitHub Actions의 `EC2_HOSTS` Repository Variable은 다음 형식을 권장합�
 `backend` 배열에 넣습니다. GitHub 호스팅 러너는 VPC의 사설 IP에 직접 접속할 수
 없으므로 Public IP/DNS 또는 별도의 self-hosted runner/SSM 연결이 필요합니다.
 
-## 2. 런타임 설치
+## 2. GitHub Actions로 초기화
 
-프론트엔드 EC2에는 Node.js 20 이상(현재 CI와 동일하게 22 권장), 백엔드 EC2에는
-Java 25가 필요합니다. 설치 후 배포 사용자 셸에서 확인합니다.
+`Bootstrap EC2` 워크플로우는 Ubuntu에서 필요한 런타임(Node.js 22 또는 Java 25),
+systemd 유닛, 배포 디렉터리 및 제한된 sudo 재시작 권한을 자동으로 구성합니다.
+백엔드 초기화에는 아래의 multiline GitHub Secret이 추가로 필요합니다.
 
-```bash
-node --version
-java -version
+```text
+BACKEND_ENV
 ```
 
-프론트와 백엔드가 분리된 서버라면 각 서버에 필요한 런타임만 설치합니다. Maven,
-pnpm 및 전체 소스는 필요하지 않습니다. 빌드는 GitHub Actions에서 수행됩니다.
+`BACKEND_ENV` 값은 다음 환경 파일의 전체 내용입니다.
 
-## 3. systemd 프로비저닝 스크립트 전송
+```env
+ENCRYPTION_KEY=64자리_HEX_키
+ENCRYPTION_SALT=솔트
+JWT_SECRET=충분히_긴_랜덤_시크릿
+MONGO_URI=mongodb://MONGODB_PRIVATE_HOST:27017/bootcamp-chat
+REDIS_HOST=REDIS_PRIVATE_HOST
+REDIS_PORT=6379
+REDIS_PASSWORD=실제_비밀번호
+PORT=5001
+WS_PORT=5002
+OPENAI_API_KEY=실제_OpenAI_API_키
+CORS_ALLOWED_ORIGINS=https://chat.goorm-ktb-007.goorm.team
+SOCKETIO_SERVER_ORIGIN=https://chat.goorm-ktb-007.goorm.team
+```
+
+GitHub 저장소에서 **Actions → Bootstrap EC2 → Run workflow**를 열고 `all`을
+선택하면 `EC2_HOSTS`의 frontend/backend 인벤토리별로 필요한 초기화가 실행됩니다.
+역할별 초기화만 필요할 때는 `frontend` 또는 `backend`를 선택합니다.
+
+Maven, pnpm 및 전체 소스는 EC2에 설치하지 않습니다. 빌드는 GitHub Actions에서
+수행하고 EC2는 런타임과 산출물만 사용합니다.
+
+## 3. 수동 프로비저닝 대안
 
 로컬 저장소 루트에서 실행합니다.
 
@@ -68,7 +89,7 @@ sudo NODE_BIN="$(command -v node)" JAVA_BIN="$(command -v java)" \
 스크립트는 배포 디렉터리, systemd 유닛, 배포용으로 제한된 sudo 재시작 권한을
 생성합니다. 산출물이 아직 없으므로 유닛을 활성화만 하고 시작하지는 않습니다.
 
-## 4. 백엔드 환경 파일 생성
+## 4. 수동 백엔드 환경 파일 생성
 
 백엔드 EC2의 `/home/ubuntu/ktb-chat-backend/.env`는 릴리스와 분리해 영구 보관합니다.
 아래 값을 실제 운영 값으로 작성합니다.
