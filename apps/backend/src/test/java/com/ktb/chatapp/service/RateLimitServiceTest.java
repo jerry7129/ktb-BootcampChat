@@ -2,15 +2,16 @@ package com.ktb.chatapp.service;
 
 import com.ktb.chatapp.config.MongoTestContainer;
 import com.ktb.chatapp.config.RedisTestContainer;
-import com.ktb.chatapp.repository.RateLimitRepository;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.Set;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
+import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.test.context.TestPropertySource;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -24,14 +25,17 @@ import static org.assertj.core.api.Assertions.assertThat;
 class RateLimitServiceTest {
 
     @Autowired
-    private RateLimitRepository rateLimitRepository;
+    private RedisTemplate<String, Object> redisTemplate;
 
     @Autowired
     private RateLimitService rateLimitService;
 
     @BeforeEach
     void setUp() {
-        rateLimitRepository.deleteAll();
+        Set<String> keys = redisTemplate.keys("ratelimit:*");
+        if (keys != null && !keys.isEmpty()) {
+            redisTemplate.delete(keys);
+        }
     }
 
     @Test
