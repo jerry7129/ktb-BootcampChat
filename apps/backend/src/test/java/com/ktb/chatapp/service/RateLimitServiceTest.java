@@ -1,6 +1,7 @@
 package com.ktb.chatapp.service;
 
 import com.ktb.chatapp.config.MongoTestContainer;
+import com.ktb.chatapp.config.RedisTestContainer;
 import com.ktb.chatapp.repository.RateLimitRepository;
 import java.time.Duration;
 import java.time.Instant;
@@ -15,7 +16,7 @@ import org.springframework.test.context.TestPropertySource;
 import static org.assertj.core.api.Assertions.assertThat;
 
 @SpringBootTest
-@Import(MongoTestContainer.class)
+@Import({MongoTestContainer.class, RedisTestContainer.class})
 @TestPropertySource(properties = {
         "socketio.enabled=false"
 })

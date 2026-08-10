@@ -4,10 +4,12 @@ import com.ktb.chatapp.config.MongoTestContainer;
 import java.time.Instant;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.redisson.api.RedissonClient;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.test.context.TestPropertySource;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -24,6 +26,9 @@ import static org.junit.jupiter.api.Assertions.*;
 @DisplayName("JwtService 통합 테스트")
 @Import(MongoTestContainer.class)
 class JwtServiceTest {
+
+    @MockitoBean
+    private RedissonClient redissonClient;
 
     @Autowired
     private JwtService jwtService;
