@@ -251,8 +251,11 @@ public class RoomController {
             );
 
         } catch (RuntimeException e) {
+            // 401은 "로그인 세션이 없다/만료됐다"는 뜻으로 프론트 인터셉터가
+            // 해석해서 강제 로그아웃 + 로그인 화면으로 튕겨버린다. 방 비밀번호가
+            // 틀린 건 로그인 상태랑 무관한 별개의 문제라 400으로 내려야 한다.
             if (e.getMessage().contains("비밀번호")) {
-                return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                return ResponseEntity.status(HttpStatus.BAD_REQUEST)
                         .body(StandardResponse.error("비밀번호가 일치하지 않습니다."));
             }
             return ResponseEntity.status(HttpStatus.BAD_REQUEST)
