@@ -183,7 +183,7 @@ jobs:
           deploy_home="$(getent passwd "$deploy_user" | cut -d: -f6)"
           chmod +x /tmp/bootstrap-ubuntu-runtime.sh /tmp/provision-ec2-systemd.sh
           sudo /tmp/bootstrap-ubuntu-runtime.sh backend "$deploy_user"
-          java_bin="$(runuser -u "$deploy_user" -- bash -lc 'source "$HOME/.sdkman/bin/sdkman-init.sh" && command -v java')"
+          java_bin="$(bash -lc 'source "$HOME/.sdkman/bin/sdkman-init.sh" && command -v java')"
           sudo env JAVA_BIN="$java_bin" /tmp/provision-ec2-systemd.sh backend "$deploy_user"
           sudo install -o "$deploy_user" -g "$deploy_user" -m 600 \
             /tmp/ktb-backend.env "$deploy_home/ktb-chat-backend/.env"
