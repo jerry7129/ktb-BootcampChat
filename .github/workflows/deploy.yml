@@ -311,7 +311,18 @@ jobs:
           release_id="$2"
           archive="$3"
           release_dir="$deploy_root/releases/$release_id"
-          previous_release="$(readlink -f "$deploy_root/current" 2>/dev/null || true)"
+          previous_release=""
+          if [[ -L "$deploy_root/current" ]]; then
+            candidate="$(readlink -e "$deploy_root/current" 2>/dev/null || true)"
+            if [[ "$candidate" == "$deploy_root/releases/"* && -d "$candidate" ]]; then
+              previous_release="$candidate"
+            else
+              echo "Ignoring invalid current symlink before frontend deployment." >&2
+            fi
+          elif [[ -e "$deploy_root/current" ]]; then
+            echo "$deploy_root/current exists but is not a symlink; refusing to overwrite it." >&2
+            exit 1
+          fi
 
           mkdir -p "$release_dir"
           tar -xzf "$archive" -C "$release_dir"
@@ -322,6 +333,8 @@ jobs:
           mv -Tf "$deploy_root/current.next" "$deploy_root/current"
 
           if ! (cd "$deploy_root/current" && ./restart.sh); then
+            echo "Frontend service diagnostics:" >&2
+            systemctl status ktb-frontend.service --no-pager --lines=100 || true
             if [[ -n "$previous_release" && -d "$previous_release" ]]; then
               echo "Frontend restart failed; rolling back to $previous_release" >&2
               ln -sfn "$previous_release" "$deploy_root/current.next"
@@ -390,7 +403,18 @@ jobs:
           release_id="$2"
           archive="$3"
           release_dir="$deploy_root/releases/$release_id"
-          previous_release="$(readlink -f "$deploy_root/current" 2>/dev/null || true)"
+          previous_release=""
+          if [[ -L "$deploy_root/current" ]]; then
+            candidate="$(readlink -e "$deploy_root/current" 2>/dev/null || true)"
+            if [[ "$candidate" == "$deploy_root/releases/"* && -d "$candidate" ]]; then
+              previous_release="$candidate"
+            else
+              echo "Ignoring invalid current symlink before backend deployment." >&2
+            fi
+          elif [[ -e "$deploy_root/current" ]]; then
+            echo "$deploy_root/current exists but is not a symlink; refusing to overwrite it." >&2
+            exit 1
+          fi
 
           mkdir -p "$release_dir/logs" "$deploy_root/uploads"
           tar -xzf "$archive" -C "$release_dir"
@@ -409,6 +433,8 @@ jobs:
           mv -Tf "$deploy_root/current.next" "$deploy_root/current"
 
           if ! (cd "$deploy_root/current" && ./app-control.sh restart); then
+            echo "Backend service diagnostics:" >&2
+            systemctl status ktb-backend.service --no-pager --lines=100 || true
             if [[ -n "$previous_release" && -d "$previous_release" ]]; then
               echo "Backend restart failed; rolling back to $previous_release" >&2
               ln -sfn "$previous_release" "$deploy_root/current.next"
