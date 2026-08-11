@@ -275,15 +275,13 @@ public class RoomController {
             throw new RuntimeException("Creator not found for room " + room.getId());
         }
         UserResponse creatorSummary = UserResponse.from(creator);
-        List<UserResponse> participantSummaries = room.getParticipantIds()
-                .stream()
-                .map(userRepository::findById).peek(optUser -> {
-                    if (optUser.isEmpty()) {
-                        log.warn("Participant not found: roomId={}, userId={}", room.getId(), optUser);
-                    }
-                })
-                .filter(Optional::isPresent)
-                .map(Optional::get)
+
+        // 참가자마다 findById를 개별 호출(N+1)하지 않고 한 번에 조회한다
+        List<User> participants = userRepository.findAllById(room.getParticipantIds());
+        if (participants.size() < room.getParticipantIds().size()) {
+            log.warn("Some participants not found for roomId={}", room.getId());
+        }
+        List<UserResponse> participantSummaries = participants.stream()
                 .map(UserResponse::from)
                 .toList();
 

@@ -3,6 +3,7 @@ package com.ktb.chatapp.websocket.socketio.handler;
 import com.ktb.chatapp.dto.FileResponse;
 import com.ktb.chatapp.dto.MessageResponse;
 import com.ktb.chatapp.dto.UserResponse;
+import com.ktb.chatapp.model.File;
 import com.ktb.chatapp.model.Message;
 import com.ktb.chatapp.model.User;
 import com.ktb.chatapp.repository.FileRepository;
@@ -33,6 +34,19 @@ public class MessageResponseMapper {
      * @return MessageResponse DTO
      */
     public MessageResponse mapToMessageResponse(Message message, User sender) {
+        File file = Optional.ofNullable(message.getFileId())
+                .flatMap(fileRepository::findById)
+                .orElse(null);
+        return mapToMessageResponse(message, sender, file);
+    }
+
+    /**
+     * 파일 정보를 이미 조회해서 넘기는 버전. 메시지를 여러 건 배치로 응답 변환할 때
+     * (예: 히스토리 로드) 메시지마다 fileRepository.findById를 개별 호출하는 N+1을 피하기 위해 사용한다.
+     *
+     * @param file 미리 조회한 파일 정보 (파일 메시지가 아니면 null)
+     */
+    public MessageResponse mapToMessageResponse(Message message, User sender, File file) {
         MessageResponse.MessageResponseBuilder builder = MessageResponse.builder()
                 .id(message.getId())
                 .content(message.getContent())
@@ -55,16 +69,15 @@ public class MessageResponseMapper {
         }
 
         // 파일 정보 설정
-        Optional.ofNullable(message.getFileId())
-                .flatMap(fileRepository::findById)
-                .map(file -> FileResponse.builder()
-                        .id(file.getId())
-                        .filename(file.getFilename())
-                        .originalname(file.getOriginalname())
-                        .mimetype(file.getMimetype())
-                        .size(file.getSize())
-                        .build())
-                .ifPresent(builder::file);
+        if (file != null) {
+            builder.file(FileResponse.builder()
+                    .id(file.getId())
+                    .filename(file.getFilename())
+                    .originalname(file.getOriginalname())
+                    .mimetype(file.getMimetype())
+                    .size(file.getSize())
+                    .build());
+        }
 
         // 메타데이터 설정
         if (message.getMetadata() != null) {
