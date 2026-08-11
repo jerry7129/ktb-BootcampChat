@@ -10,6 +10,7 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 import org.springframework.data.annotation.CreatedDate;
 import org.springframework.data.annotation.Id;
+import org.springframework.data.mongodb.core.index.Indexed;
 import org.springframework.data.mongodb.core.mapping.Document;
 import org.springframework.data.mongodb.core.mapping.Field;
 
@@ -32,7 +33,10 @@ public class Room {
     @JsonIgnore
     private String password;
 
+    // 목록 조회(RoomService.getAllRooms)가 이 필드로 정렬+상한(limit)한다. 인덱스가 없으면
+    // limit을 걸어도 Mongo가 정렬을 위해 컬렉션 전체를 먼저 읽어야 한다.
     @CreatedDate
+    @Indexed
     private LocalDateTime createdAt;
 
     @Field("participantIds")

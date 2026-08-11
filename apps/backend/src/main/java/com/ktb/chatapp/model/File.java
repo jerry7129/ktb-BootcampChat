@@ -6,6 +6,7 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 import org.springframework.data.annotation.CreatedDate;
 import org.springframework.data.annotation.Id;
+import org.springframework.data.mongodb.core.index.Indexed;
 import org.springframework.data.mongodb.core.mapping.Document;
 import org.springframework.data.mongodb.core.mapping.Field;
 
@@ -25,6 +26,10 @@ public class File {
     @Id
     private String id;
 
+    // 파일 다운로드/미리보기(FileAccessService.authorize)가 매 요청마다 이 필드로 조회한다.
+    // 인덱스가 없으면 매 요청이 files 컬렉션 풀스캔이 된다. generateSafeFileName이
+    // 타임스탬프+16자리 랜덤 hex로 만들어 실질적으로 유일하므로 unique로 건다.
+    @Indexed(unique = true)
     private String filename;
 
     private String originalname;

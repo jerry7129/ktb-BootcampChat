@@ -68,8 +68,10 @@ public class ConnectionLoginHandler {
             
             connectedUsers.set(userId, user);
 
-            log.info("Socket.IO user connected: {} ({}) - Total concurrent users: {}",
-                    getUserName(client), userId, connectedUsers.size());
+            // 동시 접속자 수는 Prometheus gauge(socketio.concurrent.users)로 이미 노출 중이라
+            // 여기서는 재조회하지 않는다. connectedUsers.size()는 Redis KEYS 스캔이라
+            // 연결마다 부르면 접속자가 늘수록 접속 자체가 느려진다.
+            log.info("Socket.IO user connected: {} ({})", getUserName(client), userId);
 
             client.joinRooms(Set.of("user:" + userId, "room-list"));
             
@@ -112,8 +114,7 @@ public class ConnectionLoginHandler {
             client.del("user");
             client.disconnect();
 
-            log.info("Socket.IO user disconnected: {} ({}) - Total concurrent users: {}",
-                    userName, userId, connectedUsers.size());
+            log.info("Socket.IO user disconnected: {} ({})", userName, userId);
         } catch (Exception e) {
             log.error("Error handling Socket.IO disconnection", e);
             client.sendEvent(ERROR, Map.of(

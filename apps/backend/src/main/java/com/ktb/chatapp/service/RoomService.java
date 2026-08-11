@@ -20,7 +20,11 @@ import java.util.function.Function;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.domain.Page;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
@@ -35,11 +39,20 @@ public class RoomService {
     private final PasswordEncoder passwordEncoder;
     private final ApplicationEventPublisher eventPublisher;
 
+    // 부하 테스트가 반복될수록 방 데이터가 계속 쌓이는데, findAll()로 전체를 매번 읽어와
+    // 정렬하면 방 개수에 비례해 이 호출이 느려진다. 목록 화면은 어차피 최신 방 위주로
+    // 보여주면 충분하므로 최신순 상한을 두고 그 이상은 DB에 정렬을 맡긴다(인덱스 없이도
+    // limit 덕분에 전체 문서를 메모리에 올리지 않는다). 방 생성/조회/입장 API와 응답
+    // 필드는 그대로이므로 랜덤 입장 버튼을 쓰는 E2E 시나리오와도 호환된다.
+    @Value("${chatapp.room-list.max-size:200}")
+    private int roomListMaxSize;
+
     public RoomsResponse getAllRooms(String name) {
 
         try {
-            // 전체 방을 조회해 최신순으로 정렬한다
-            List<Room> rooms = roomRepository.findAll();
+            Page<Room> roomPage = roomRepository.findAll(
+                PageRequest.of(0, roomListMaxSize, Sort.by(Sort.Direction.DESC, "createdAt")));
+            List<Room> rooms = roomPage.getContent();
 
             // 방마다 참가자/생성자를 개별 조회(N+1)하지 않도록 전체 유저 ID를 모아 한 번에 조회한다
             Set<String> userIds = new HashSet<>();
@@ -68,12 +81,13 @@ public class RoomService {
                     Comparator.nullsLast(Comparator.reverseOrder())))
                 .collect(Collectors.toList());
 
+            long total = roomPage.getTotalElements();
             PageMetadata metadata = PageMetadata.builder()
-                .total(roomResponses.size())
+                .total(total)
                 .page(0)
-                .pageSize(roomResponses.size())
-                .totalPages(1)
-                .hasMore(false)
+                .pageSize(roomListMaxSize)
+                .totalPages(roomPage.getTotalPages())
+                .hasMore(total > roomResponses.size())
                 .currentCount(roomResponses.size())
                 .build();
 
@@ -169,7 +183,7 @@ public class RoomService {
         return roomRepository.findById(roomId);
     }
 
-    public Room joinRoom(String roomId, String password, String name) {
+    public RoomResponse joinRoom(String roomId, String password, String name) {
         Optional<Room> roomOpt = roomRepository.findById(roomId);
         if (roomOpt.isEmpty()) {
             return null;
@@ -188,20 +202,23 @@ public class RoomService {
 
         // 이미 참여중인지 확인
         if (!room.getParticipantIds().contains(user.getId())) {
-            // 채팅방 참여
-            room.getParticipantIds().add(user.getId());
-            room = roomRepository.save(room);
+            // 방 문서 전체를 read-modify-save하면 동시 입장 시 갱신 유실과 쓰기 경합이
+            // 발생할 수 있다. $addToSet으로 참가자 한 명만 원자적으로 추가한다.
+            roomRepository.addParticipant(roomId, user.getId());
+            room.addParticipant(user.getId());
         }
-        
+
+        // HTTP 응답과 roomUpdated 이벤트가 같은 DTO를 사용하도록 한 번만 조회/변환한다.
+        RoomResponse roomResponse = mapToRoomResponse(room, name);
+
         // Publish event for room updated
         try {
-            RoomResponse roomResponse = mapToRoomResponse(room, name);
             eventPublisher.publishEvent(new RoomUpdatedEvent(this, roomId, roomResponse));
         } catch (Exception e) {
             log.error("roomUpdate 이벤트 발행 실패", e);
         }
 
-        return room;
+        return roomResponse;
     }
 
     private RoomResponse mapToRoomResponse(Room room, String name) {
