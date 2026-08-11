@@ -3,6 +3,7 @@ package com.ktb.chatapp.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -13,13 +14,13 @@ import com.ktb.chatapp.model.User;
 import com.ktb.chatapp.repository.RoomRepository;
 import com.ktb.chatapp.repository.UserRepository;
 import java.util.HashSet;
-import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
+import org.mockito.ArgumentCaptor;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -59,35 +60,35 @@ class RoomServiceTest {
     }
 
     @Test
-    void joinRoom_addsParticipantAtomicallyAndBuildsResponseOnce() {
+    void joinRoom_addsParticipantAndPublishesLightweightUpdate() {
         when(roomRepository.findById("room-1")).thenReturn(Optional.of(room));
-        when(userRepository.findAllById(Set.of(creator.getId(), joiner.getId())))
-            .thenReturn(List.of(creator, joiner));
-        when(recentMessageCounter.countRecentMessages("room-1")).thenReturn(3);
 
         RoomResponse response = roomService.joinRoom("room-1", null, joiner.getId());
 
-        assertThat(response.getParticipants()).extracting("id")
-            .containsExactlyInAnyOrder(creator.getId(), joiner.getId());
-        assertThat(response.getRecentMessageCount()).isEqualTo(3);
+        assertThat(response.getId()).isEqualTo("room-1");
+        assertThat(response.getParticipantsCount()).isEqualTo(2);
         verify(roomRepository).addParticipant("room-1", joiner.getId());
         verify(roomRepository, never()).save(room);
-        verify(userRepository).findAllById(Set.of(creator.getId(), joiner.getId()));
-        verify(recentMessageCounter).countRecentMessages("room-1");
-        verify(eventPublisher).publishEvent(org.mockito.ArgumentMatchers.any(RoomUpdatedEvent.class));
+        verifyNoInteractions(userRepository, recentMessageCounter);
+
+        ArgumentCaptor<RoomUpdatedEvent> eventCaptor =
+            ArgumentCaptor.forClass(RoomUpdatedEvent.class);
+        verify(eventPublisher).publishEvent(eventCaptor.capture());
+        assertThat(eventCaptor.getValue().getRoomId()).isEqualTo("room-1");
+        assertThat(eventCaptor.getValue().getParticipantsCount()).isEqualTo(2);
     }
 
     @Test
     void joinRoom_doesNotWriteParticipantAgainWhenAlreadyJoined() {
         room.addParticipant(joiner.getId());
         when(roomRepository.findById("room-1")).thenReturn(Optional.of(room));
-        when(userRepository.findAllById(Set.of(creator.getId(), joiner.getId())))
-            .thenReturn(List.of(creator, joiner));
 
-        roomService.joinRoom("room-1", null, joiner.getId());
+        RoomResponse response = roomService.joinRoom("room-1", null, joiner.getId());
 
+        assertThat(response.getParticipantsCount()).isEqualTo(2);
         verify(roomRepository, never()).addParticipant("room-1", joiner.getId());
         verify(roomRepository, never()).save(room);
+        verifyNoInteractions(userRepository, recentMessageCounter);
     }
 
     @Test

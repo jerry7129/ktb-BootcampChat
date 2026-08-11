@@ -133,6 +133,31 @@ describe('useRoomsSocket', () => {
     ]);
   });
 
+  it('merges a lightweight roomUpdated payload without dropping room details', async () => {
+    const socket = createSocket();
+    const setRooms = vi.fn();
+
+    renderRoomsSocket(socket, { setRooms });
+
+    await waitFor(() => {
+      expect(socket.on).toHaveBeenCalledWith('roomUpdated', expect.any(Function));
+    });
+
+    handlerFor(socket, 'roomUpdated')({ _id: 'room-2', participantsCount: 7 });
+
+    const updateRooms = setRooms.mock.calls[0][0];
+
+    expect(
+      updateRooms([
+        { _id: 'room-1', name: '방1', participantsCount: 1 },
+        { _id: 'room-2', name: '방2', participantsCount: 2 },
+      ])
+    ).toEqual([
+      { _id: 'room-1', name: '방1', participantsCount: 1 },
+      { _id: 'room-2', name: '방2', participantsCount: 7 },
+    ]);
+  });
+
   it('ignores a roomActivity payload without a room id', async () => {
     const socket = createSocket();
     const setRooms = vi.fn();

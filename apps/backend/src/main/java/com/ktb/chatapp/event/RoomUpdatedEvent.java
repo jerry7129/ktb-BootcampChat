@@ -1,17 +1,16 @@
 package com.ktb.chatapp.event;
 
-import com.ktb.chatapp.dto.RoomResponse;
 import lombok.Getter;
 import org.springframework.context.ApplicationEvent;
 
 @Getter
 public class RoomUpdatedEvent extends ApplicationEvent {
     private final String roomId;
-    private final RoomResponse roomResponse;
+    private final int participantsCount;
 
-    public RoomUpdatedEvent(Object source, String roomId, RoomResponse roomResponse) {
+    public RoomUpdatedEvent(Object source, String roomId, int participantsCount) {
         super(source);
         this.roomId = roomId;
-        this.roomResponse = roomResponse;
+        this.participantsCount = participantsCount;
     }
 }

@@ -208,15 +208,14 @@ public class RoomService {
             room.addParticipant(userId);
         }
 
-        RoomResponse roomResponse =
-                mapToRoomResponse(room, userId);
+        int participantsCount = room.getParticipantIds().size();
 
         try {
             eventPublisher.publishEvent(
                     new RoomUpdatedEvent(
                             this,
                             roomId,
-                            roomResponse
+                            participantsCount
                     )
             );
         } catch (Exception e) {
@@ -227,7 +226,12 @@ public class RoomService {
             );
         }
 
-        return roomResponse;
+        // 입장 API는 성공 여부와 roomId만 응답에 사용한다. 전체 참여자 정보와
+        // 최근 메시지를 다시 조회하지 않고 필요한 최소 결과만 반환한다.
+        return RoomResponse.builder()
+                .id(roomId)
+                .participantsCount(participantsCount)
+                .build();
     }
 
     private RoomResponse mapToRoomResponse(Room room, String name) {

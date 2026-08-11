@@ -54,9 +54,13 @@ export const useRoomsSocket = ({
             setRooms((prev) => [newRoom, ...prev]);
           },
           roomUpdated: (updatedRoom) => {
+            if (!updatedRoom?._id) return;
+
             setRooms((prev) =>
               prev.map((room) =>
-                room._id === updatedRoom._id ? updatedRoom : room
+                room._id === updatedRoom._id
+                  ? { ...room, participantsCount: updatedRoom.participantsCount }
+                  : room
               )
             );
           },

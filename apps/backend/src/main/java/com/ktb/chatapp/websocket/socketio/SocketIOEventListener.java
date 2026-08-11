@@ -48,7 +48,10 @@ public class SocketIOEventListener {
     @EventListener
     public void handleRoomUpdatedEvent(RoomUpdatedEvent event) {
         try {
-            socketIOServer.getRoomOperations(ROOM_LIST).sendEvent(ROOM_UPDATE, event.getRoomResponse());
+            socketIOServer.getRoomOperations(ROOM_LIST).sendEvent(ROOM_UPDATE, Map.of(
+                    "_id", event.getRoomId(),
+                    "participantsCount", event.getParticipantsCount()
+            ));
             log.info("roomUpdate 이벤트 발송: roomId={}", event.getRoomId());
         } catch (Exception e) {
             log.error("roomUpdate 이벤트 발송 실패: roomId={}", event.getRoomId(), e);
