@@ -1,6 +1,8 @@
 package com.ktb.chatapp.service;
 
 import com.ktb.chatapp.dto.ProfileImageResponse;
+import com.ktb.chatapp.dto.UpdateProfileRequest;
+import com.ktb.chatapp.dto.UserResponse;
 import com.ktb.chatapp.model.User;
 import com.ktb.chatapp.repository.UserRepository;
 import com.ktb.chatapp.storage.LocalStorage;
@@ -17,6 +19,10 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.api.io.TempDir;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.mongodb.core.FindAndModifyOptions;
+import org.springframework.data.mongodb.core.MongoOperations;
+import org.springframework.data.mongodb.core.query.Query;
+import org.springframework.data.mongodb.core.query.Update;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.util.ReflectionTestUtils;
 
@@ -30,6 +36,9 @@ import static org.mockito.Mockito.when;
 class UserServiceTest {
 
     private static final String EMAIL = "user@example.com";
+
+    @Mock
+    private MongoOperations mongoOperations;
 
     @Mock
     private UserRepository userRepository;
@@ -48,7 +57,12 @@ class UserServiceTest {
      */
     @BeforeEach
     void setUp() {
-        userService = new UserService(userRepository, fileService, new LocalStorage(uploadDir.toString()));
+        userService = new UserService(
+                userRepository,
+                fileService,
+                new LocalStorage(uploadDir.toString()),
+                mongoOperations
+        );
         ReflectionTestUtils.setField(userService, "maxProfileImageSize", 5242880L);
     }
 
@@ -96,5 +110,31 @@ class UserServiceTest {
 
         assertThat(Files.exists(oldFile)).isFalse();
         assertThat(user.getProfileImage()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("프로필 이름 변경은 findAndModify 한 번으로 처리한다")
+    void updateUserProfile_UsesAtomicFindAndModify() {
+        UpdateProfileRequest request = new UpdateProfileRequest();
+        request.setName("변경된 이름");
+
+        User updatedUser = User.builder()
+                .id("user-1")
+                .email(EMAIL)
+                .name("변경된 이름")
+                .profileImage("")
+                .build();
+
+        when(mongoOperations.findAndModify(
+                any(Query.class),
+                any(Update.class),
+                any(FindAndModifyOptions.class),
+                eq(User.class)
+        )).thenReturn(updatedUser);
+
+        UserResponse response =
+                userService.updateUserProfile(EMAIL, request);
+
+        assertThat(response.getName()).isEqualTo("변경된 이름");
     }
 }

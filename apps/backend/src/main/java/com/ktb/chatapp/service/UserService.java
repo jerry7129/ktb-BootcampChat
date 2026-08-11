@@ -10,6 +10,11 @@ import com.ktb.chatapp.util.FileUtil;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.data.mongodb.core.FindAndModifyOptions;
+import org.springframework.data.mongodb.core.MongoOperations;
+import org.springframework.data.mongodb.core.query.Criteria;
+import org.springframework.data.mongodb.core.query.Query;
+import org.springframework.data.mongodb.core.query.Update;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
@@ -26,6 +31,7 @@ public class UserService {
     private final UserRepository userRepository;
     private final FileService fileService;
     private final StoragePort storagePort;
+    private final MongoOperations mongoOperations;
 
     @Value("${app.profile.image.max-size:5242880}") // 5MB
     private long maxProfileImageSize;
@@ -48,16 +54,39 @@ public class UserService {
      * 사용자 프로필 업데이트
      * @param email 사용자 이메일
      */
-    public UserResponse updateUserProfile(String email, UpdateProfileRequest request) {
-        User user = userRepository.findByEmail(email.toLowerCase())
-                .orElseThrow(() -> new UsernameNotFoundException("사용자를 찾을 수 없습니다."));
+    public UserResponse updateUserProfile(
+            String email,
+            UpdateProfileRequest request
+    ) {
+        Query query = Query.query(
+                Criteria.where("email").is(email.toLowerCase())
+        );
 
-        // 프로필 정보 업데이트
-        user.setName(request.getName());
-        user.setUpdatedAt(LocalDateTime.now());
+        Update update = new Update()
+                .set("name", request.getName())
+                .set("updatedAt", LocalDateTime.now());
 
-        User updatedUser = userRepository.save(user);
-        log.info("사용자 프로필 업데이트 완료 - ID: {}, Name: {}", user.getId(), request.getName());
+        FindAndModifyOptions options =
+                FindAndModifyOptions.options().returnNew(true);
+
+        User updatedUser = mongoOperations.findAndModify(
+                query,
+                update,
+                options,
+                User.class
+        );
+
+        if (updatedUser == null) {
+            throw new UsernameNotFoundException(
+                    "사용자를 찾을 수 없습니다."
+            );
+        }
+
+        log.info(
+                "사용자 프로필 업데이트 완료 - ID: {}, Name: {}",
+                updatedUser.getId(),
+                request.getName()
+        );
 
         return UserResponse.from(updatedUser);
     }
