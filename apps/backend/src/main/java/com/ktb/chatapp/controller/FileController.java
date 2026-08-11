@@ -228,10 +228,13 @@ public class FileController {
                 encodeFilename(stream.originalname())
         );
 
+        // 파일명이 업로드마다 타임스탬프+랜덤값으로 유니크하게 생성되므로
+        // (FileUtil.generateSafeFileName), 같은 파일명이면 내용이 절대 바뀌지 않는다 -> 영구 캐싱 가능
         return ResponseEntity.ok()
                 .contentType(MediaType.parseMediaType(stream.contentType()))
                 .contentLength(stream.size())
                 .header(HttpHeaders.CONTENT_DISPOSITION, contentDisposition)
+                .header(HttpHeaders.CACHE_CONTROL, "public, max-age=31536000, immutable")
                 .body(stream.resource());
     }
 
