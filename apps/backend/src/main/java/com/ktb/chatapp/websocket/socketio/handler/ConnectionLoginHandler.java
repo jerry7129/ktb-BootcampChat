@@ -10,6 +10,7 @@ import io.micrometer.core.instrument.Gauge;
 import io.micrometer.core.instrument.MeterRegistry;
 import java.time.Duration;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -31,20 +32,17 @@ public class ConnectionLoginHandler {
     private final ConnectedUsers connectedUsers;
     private final UserRooms userRooms;
     private final RoomJoinHandler roomJoinHandler;
-    private final RoomLeaveHandler roomLeaveHandler;
 
     public ConnectionLoginHandler(
             SocketIOServer socketIOServer,
             ConnectedUsers connectedUsers,
             UserRooms userRooms,
             RoomJoinHandler roomJoinHandler,
-            RoomLeaveHandler roomLeaveHandler,
             MeterRegistry meterRegistry) {
         this.socketIOServer = socketIOServer;
         this.connectedUsers = connectedUsers;
         this.userRooms = userRooms;
         this.roomJoinHandler = roomJoinHandler;
-        this.roomLeaveHandler = roomLeaveHandler;
 
         // Register gauge metric for concurrent users
         Gauge.builder("socketio.concurrent.users", connectedUsers::size)
@@ -83,19 +81,23 @@ public class ConnectionLoginHandler {
         }
     }
     
+    /**
+     * 소켓 연결 해제는 "방을 나갔다"는 뜻이 아니다 (와이파이 순단, 탭 백그라운드, ping 타임아웃 등으로도
+     * 발생함). 여기서 방마다 자동으로 handleLeaveRoom을 돌리면, 끊겼다 다시 붙을 때마다 참가자 목록에서
+     * 빠졌다가 재입장하며 시스템 메시지+브로드캐스트가 반복된다 — 특히 배포로 서버가 재시작돼 모든 클라이언트가
+     * 한꺼번에 끊겼다 재연결할 때 이 부담이 폭발적으로 늘어난다. 진짜 "나가기"는 LEAVE_ROOM 이벤트
+     * (RoomLeaveHandler, beforeunload에서 명시적으로 호출됨)로만 처리한다.
+     */
     @OnDisconnect
     public void onDisconnect(SocketIOClient client) {
         String userId = getUserId(client);
         String userName = getUserName(client);
-        
+
         try {
             if (userId == null) {
                 return;
             }
-            
-            userRooms.get(userId).forEach(roomId -> {
-                roomLeaveHandler.handleLeaveRoom(client, roomId);
-            });
+
             String socketId = client.getSessionId().toString();
             
             // 해당 사용자의 현재 활성 연결인 경우에만 정리
@@ -152,11 +154,15 @@ public class ConnectionLoginHandler {
         }
 
         var userRoom = socketIOServer.getRoomOperations("user:" + userId);
+        // User-Agent가 없는 클라이언트(브라우저가 아닌 부하테스트 도구 등)도 있다.
+        // Map.of()는 값이 null이면 그 자리에서 NPE를 던지므로 기본값으로 채운다.
+        String deviceInfo = Objects.requireNonNullElse(
+                client.getHandshakeData().getHttpHeaders().get("User-Agent"), "unknown");
 
         // Send duplicate login notification
         userRoom.sendEvent(DUPLICATE_LOGIN, client, Map.of(
                 "type", "new_login_attempt",
-                "deviceInfo", client.getHandshakeData().getHttpHeaders().get("User-Agent"),
+                "deviceInfo", deviceInfo,
                 "ipAddress", client.getRemoteAddress().toString(),
                 "timestamp", System.currentTimeMillis()
         ));
