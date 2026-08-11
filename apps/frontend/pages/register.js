@@ -54,10 +54,10 @@ const Register = () => {
       
       setSuccess(true);
       setLoading(false);
-      
-      setTimeout(() => {
-        router.push('/login');
-      }, 1000);
+
+      // 등록 API가 성공했으므로 별도 지연 없이 로그인 화면으로 이동한다.
+      // 성공 안내를 위해 기다리면 연속 가입 흐름에서 사용자마다 지연이 누적된다.
+      router.push('/login');
     } catch (err) {
       setError(err.message || '회원가입 처리 중 오류가 발생했습니다.');
       setLoading(false);
