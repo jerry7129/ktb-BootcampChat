@@ -12,7 +12,6 @@ import com.ktb.chatapp.model.User;
 import com.ktb.chatapp.repository.MessageRepository;
 import com.ktb.chatapp.repository.RoomRepository;
 import com.ktb.chatapp.repository.UserRepository;
-import com.ktb.chatapp.service.RoomParticipantStore;
 import com.ktb.chatapp.websocket.socketio.SocketUser;
 import com.ktb.chatapp.websocket.socketio.UserRooms;
 import java.time.LocalDateTime;
@@ -42,7 +41,6 @@ public class RoomLeaveHandler {
     private final RoomRepository roomRepository;
     private final UserRepository userRepository;
     private final UserRooms userRooms;
-    private final RoomParticipantStore roomParticipantStore;
     private final MessageResponseMapper messageResponseMapper;
     
     @OnEvent(LEAVE_ROOM)
@@ -70,7 +68,6 @@ public class RoomLeaveHandler {
             }
             
             roomRepository.removeParticipant(roomId, userId);
-            roomParticipantStore.remove(roomId, userId);
             
             client.leaveRoom(roomId);
             userRooms.remove(userId, roomId);

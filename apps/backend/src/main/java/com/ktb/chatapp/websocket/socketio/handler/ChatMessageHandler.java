@@ -11,7 +11,6 @@ import com.ktb.chatapp.dto.UserResponse;
 import com.ktb.chatapp.model.*;
 import com.ktb.chatapp.repository.FileRepository;
 import com.ktb.chatapp.repository.MessageRepository;
-import com.ktb.chatapp.repository.RoomRepository;
 import com.ktb.chatapp.repository.UserRepository;
 import com.ktb.chatapp.util.BannedWordChecker;
 import com.ktb.chatapp.websocket.socketio.ai.AiService;
@@ -41,7 +40,6 @@ import static com.ktb.chatapp.websocket.socketio.SocketIOEvents.*;
 public class ChatMessageHandler {
     private final SocketIOServer socketIOServer;
     private final MessageRepository messageRepository;
-    private final RoomRepository roomRepository;
     private final UserRepository userRepository;
     private final FileRepository fileRepository;
     private final AiService aiService;
@@ -110,6 +108,20 @@ public class ChatMessageHandler {
         }
         
         try {
+            String roomId = data.getRoom();
+            // RoomJoinHandler가 DB 권한 검증을 통과한 소켓만 room에 가입시킨다.
+            // 메시지마다 방 문서를 다시 조회하지 않고 서버가 관리하는 현재 소켓의
+            // room membership을 사용해 접근 권한을 확인한다.
+            if (roomId == null || !client.getAllRooms().contains(roomId)) {
+                recordError("room_access_denied");
+                client.sendEvent(ERROR, Map.of(
+                        "code", "MESSAGE_ERROR",
+                        "message", "채팅방 접근 권한이 없습니다."
+                ));
+                timerSample.stop(createTimer("error", "room_access_denied"));
+                return;
+            }
+
             User sender = userRepository.findById(socketUser.id()).orElse(null);
             if (sender == null) {
                 recordError("user_not_found");
@@ -118,18 +130,6 @@ public class ChatMessageHandler {
                     "message", "User not found"
                 ));
                 timerSample.stop(createTimer("error", "user_not_found"));
-                return;
-            }
-
-            String roomId = data.getRoom();
-            Room room = roomRepository.findById(roomId).orElse(null);
-            if (room == null || !room.getParticipantIds().contains(socketUser.id())) {
-                recordError("room_access_denied");
-                client.sendEvent(ERROR, Map.of(
-                    "code", "MESSAGE_ERROR",
-                    "message", "채팅방 접근 권한이 없습니다."
-                ));
-                timerSample.stop(createTimer("error", "room_access_denied"));
                 return;
             }
 

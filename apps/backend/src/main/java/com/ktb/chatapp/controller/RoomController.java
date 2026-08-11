@@ -320,7 +320,6 @@ public class RoomController {
                 .hasPassword(room.isHasPassword())
                 .creator(creatorSummary)
                 .participants(participantSummaries)
-                .participantsCount(room.getParticipantIds().size())
                 .createdAtDateTime(room.getCreatedAt() != null ? room.getCreatedAt() : LocalDateTime.now())
                 .isCreator(isCreator)
                 .recentMessageCount((int) recentMessageCount)

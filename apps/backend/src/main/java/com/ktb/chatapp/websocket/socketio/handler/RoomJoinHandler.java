@@ -13,7 +13,6 @@ import com.ktb.chatapp.model.Room;
 import com.ktb.chatapp.repository.MessageRepository;
 import com.ktb.chatapp.repository.RoomRepository;
 import com.ktb.chatapp.repository.UserRepository;
-import com.ktb.chatapp.service.RoomParticipantStore;
 import com.ktb.chatapp.websocket.socketio.SocketUser;
 import com.ktb.chatapp.websocket.socketio.UserRooms;
 import java.time.LocalDateTime;
@@ -40,7 +39,6 @@ public class RoomJoinHandler {
     private final RoomRepository roomRepository;
     private final UserRepository userRepository;
     private final UserRooms userRooms;
-    private final RoomParticipantStore roomParticipantStore;
     private final MessageLoader messageLoader;
     private final MessageResponseMapper messageResponseMapper;
     private final RoomLeaveHandler roomLeaveHandler;
@@ -75,7 +73,6 @@ public class RoomJoinHandler {
             }
 
             roomRepository.addParticipant(roomId, userId);
-            roomParticipantStore.add(roomId, userId);
 
             // Join socket room and add to user's room set
             client.joinRoom(roomId);
