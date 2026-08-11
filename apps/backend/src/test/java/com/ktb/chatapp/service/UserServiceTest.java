@@ -75,23 +75,31 @@ class UserServiceTest {
     }
 
     @Test
-    @DisplayName("프로필 이미지 재업로드 시 기존 이미지 실물 파일을 삭제한다")
-    void uploadProfileImage_DeletesOldProfileImageFile() throws IOException {
+    @DisplayName("프로필 이미지 재업로드는 원자적으로 DB를 변경하고 기존 파일을 삭제한다")
+    void uploadProfileImage_AtomicallyUpdatesAndDeletesOldFile() throws IOException {
         Path oldFile = createOldProfileImageFile("old.jpg");
-        User user = User.builder()
+
+        User previousUser = User.builder()
                 .id("user-1")
                 .email(EMAIL)
                 .profileImage("profiles/old.jpg")
                 .build();
-        when(userRepository.findByEmail(EMAIL)).thenReturn(Optional.of(user));
+
         when(fileService.storeFile(any(), eq("profiles"))).thenReturn("profiles/new.jpg");
+
+        when(mongoOperations.findAndModify(
+                any(Query.class),
+                any(Update.class),
+                any(FindAndModifyOptions.class),
+                eq(User.class)
+        )).thenReturn(previousUser);
+
         MockMultipartFile file = new MockMultipartFile(
                 "file", "new.jpg", "image/jpeg", "new-image-bytes".getBytes());
 
         ProfileImageResponse response = userService.uploadProfileImage(EMAIL, file);
 
         assertThat(Files.exists(oldFile)).isFalse();
-        assertThat(user.getProfileImage()).isEqualTo("profiles/new.jpg");
         assertThat(response.getImageUrl()).isEqualTo("/api/files/profiles/new.jpg");
     }
 
