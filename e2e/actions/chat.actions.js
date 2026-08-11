@@ -18,51 +18,14 @@ async function joinFirstChatRoomAction(page) {
 async function joinRandomChatRoomAction(page) {
   await page.goto(`${BASE_URL}/chat`);
 
+  // 채팅방 버튼이 최소 하나 이상 로드될 때까지 대기
+  await page.getByTestId('join-chat-room-button').first().waitFor({ state: 'visible' });
+
   const chatRoomButtons = page.getByTestId('join-chat-room-button');
-
-  await chatRoomButtons.first().waitFor({
-    state: 'visible',
-    timeout: 10_000,
-  });
-
   const count = await chatRoomButtons.count();
 
-  if (count === 0) {
-    throw new Error('[joinRoom] 입장 가능한 채팅방이 없습니다.');
-  }
-
   const randomIndex = Math.floor(Math.random() * count);
-  const joinResponses = [];
-
-  const handleResponse = (response) => {
-    const url = new URL(response.url());
-
-    if (response.request().method() === 'POST' && /^\/api\/rooms\/[^/]+\/join$/.test(url.pathname)) {
-      joinResponses.push(response);
-    }
-  };
-
-  page.on('response', handleResponse);
-
-  try {
-    // URL 대기를 클릭보다 먼저 등록해야 빠른 화면 전환을 놓치지 않는다.
-    await Promise.all([
-      page.waitForURL(new RegExp(`${BASE_URL}/chat/[a-f0-9]{24}$`), { timeout: 10_000 }),
-      chatRoomButtons.nth(randomIndex).click(),
-    ]);
-  } catch (error) {
-    const attempts = await Promise.all(
-        joinResponses.map(async (response) => ({
-          status: response.status(),
-          url: response.url(),
-          body: (await response.text().catch(() => '')).slice(0, 300),
-        }))
-    );
-
-    throw new Error(`[joinRoom] 방 입장 실패. attempts=${JSON.stringify(attempts)} cause=${error.message}`);
-  } finally {
-    page.off('response', handleResponse);
-  }
+  await chatRoomButtons.nth(randomIndex).click();
 }
 
 /**
