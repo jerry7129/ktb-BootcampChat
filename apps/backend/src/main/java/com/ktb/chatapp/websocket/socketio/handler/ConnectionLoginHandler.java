@@ -12,6 +12,10 @@ import java.time.Duration;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
+import jakarta.annotation.PreDestroy;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
@@ -32,6 +36,7 @@ public class ConnectionLoginHandler {
     private final ConnectedUsers connectedUsers;
     private final UserRooms userRooms;
     private final RoomJoinHandler roomJoinHandler;
+    private final ScheduledExecutorService duplicateLoginScheduler;
 
     public ConnectionLoginHandler(
             SocketIOServer socketIOServer,
@@ -39,10 +44,26 @@ public class ConnectionLoginHandler {
             UserRooms userRooms,
             RoomJoinHandler roomJoinHandler,
             MeterRegistry meterRegistry) {
+        this(socketIOServer, connectedUsers, userRooms, roomJoinHandler, meterRegistry,
+                Executors.newSingleThreadScheduledExecutor(runnable -> {
+                    Thread thread = new Thread(runnable, "duplicate-login-scheduler");
+                    thread.setDaemon(true);
+                    return thread;
+                }));
+    }
+
+    ConnectionLoginHandler(
+            SocketIOServer socketIOServer,
+            ConnectedUsers connectedUsers,
+            UserRooms userRooms,
+            RoomJoinHandler roomJoinHandler,
+            MeterRegistry meterRegistry,
+            ScheduledExecutorService duplicateLoginScheduler) {
         this.socketIOServer = socketIOServer;
         this.connectedUsers = connectedUsers;
         this.userRooms = userRooms;
         this.roomJoinHandler = roomJoinHandler;
+        this.duplicateLoginScheduler = duplicateLoginScheduler;
 
         // Register gauge metric for concurrent users
         Gauge.builder("socketio.concurrent.users", connectedUsers::size)
@@ -73,7 +94,10 @@ public class ConnectionLoginHandler {
             // 연결마다 부르면 접속자가 늘수록 접속 자체가 느려진다.
             log.info("Socket.IO user connected: {} ({})", getUserName(client), userId);
 
-            client.joinRooms(Set.of("user:" + userId, "room-list"));
+            client.joinRooms(Set.of(
+                    "user:" + userId,
+                    "room-list",
+                    socketRoom(user.socketId())));
             
         } catch (Exception e) {
             log.error("Error handling Socket.IO connection", e);
@@ -110,7 +134,10 @@ public class ConnectionLoginHandler {
                 log.warn("Socket.IO disconnect: User {} has a different active connection. Skipping cleanup.", userId);
             }
 
-            client.leaveRooms(Set.of("user:" + userId, "room-list"));
+            client.leaveRooms(Set.of(
+                    "user:" + userId,
+                    "room-list",
+                    socketRoom(socketId)));
             client.del("user");
             client.disconnect();
 
@@ -139,14 +166,10 @@ public class ConnectionLoginHandler {
     }
     
     /**
-     * "user:{userId}" 룸으로 브로드캐스트한다 (RedissonStoreFactory 덕분에
-     * 룸 멤버십이 인스턴스 간에 공유돼서 멀티 클러스터에서도 동작함).
-     * 이전에는 socketIOServer.getClient(UUID)로 현재 JVM에 붙은 소켓만
-     * 찾았는데, 그러면 (1) 다른 노드에 붙은 예전 세션은 못 찾고
-     * (2) Redis 조회 지연 때문에 방금 끊긴 연결을 아직 살아있다고
-     * 착각하는 레이스가 생겼다. 방 브로드캐스트는 방금 연결한 client만
-     * 제외하고 보내므로, 예전 연결이 이미 나갔으면 그냥 아무도 못 받고
-     * 끝난다 (안전), 실제로 살아있으면 어느 노드에 있든 정확히 받는다.
+     * 감지 당시의 기존 소켓 전용 룸으로만 알린다. user 룸 전체에 방송한 뒤
+     * 새 client 를 제외하는 방식은 10초 유예 중 새 연결이 추가될 때 종료 대상이
+     * 넓어질 수 있다. 소켓 전용 룸은 RedissonStoreFactory를 통해 노드 간 공유되므로
+     * 기존 소켓이 다른 인스턴스에 있어도 정확히 하나만 대상으로 삼을 수 있다.
      */
     private void notifyDuplicateLogin(SocketIOClient client, String userId) {
         var socketUser = connectedUsers.get(userId);
@@ -154,31 +177,36 @@ public class ConnectionLoginHandler {
             return;
         }
 
-        var userRoom = socketIOServer.getRoomOperations("user:" + userId);
+        String previousSocketRoom = socketRoom(socketUser.socketId());
+        var previousSocket = socketIOServer.getRoomOperations(previousSocketRoom);
         // User-Agent가 없는 클라이언트(브라우저가 아닌 부하테스트 도구 등)도 있다.
         // Map.of()는 값이 null이면 그 자리에서 NPE를 던지므로 기본값으로 채운다.
         String deviceInfo = Objects.requireNonNullElse(
                 client.getHandshakeData().getHttpHeaders().get("User-Agent"), "unknown");
 
         // Send duplicate login notification
-        userRoom.sendEvent(DUPLICATE_LOGIN, client, Map.of(
+        previousSocket.sendEvent(DUPLICATE_LOGIN, Map.of(
                 "type", "new_login_attempt",
                 "deviceInfo", deviceInfo,
                 "ipAddress", client.getRemoteAddress().toString(),
                 "timestamp", System.currentTimeMillis()
         ));
 
-        new Thread(() -> {
-            try {
-                Thread.sleep(Duration.ofSeconds(10));
-                userRoom.sendEvent(SESSION_ENDED, client, Map.of(
+        duplicateLoginScheduler.schedule(
+                () -> previousSocket.sendEvent(SESSION_ENDED, Map.of(
                         "reason", "duplicate_login",
                         "message", "다른 기기에서 로그인하여 현재 세션이 종료되었습니다."
-                ));
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                log.error("Error in duplicate login notification thread", e);
-            }
-        }).start();
+                )),
+                Duration.ofSeconds(10).toSeconds(),
+                TimeUnit.SECONDS);
+    }
+
+    private static String socketRoom(String socketId) {
+        return "socket:" + socketId;
+    }
+
+    @PreDestroy
+    void shutdownDuplicateLoginScheduler() {
+        duplicateLoginScheduler.shutdownNow();
     }
 }
