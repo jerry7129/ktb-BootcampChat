@@ -11,6 +11,7 @@ import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import org.springframework.core.io.Resource;
+import org.springframework.http.CacheControl;
 import org.springframework.http.MediaType;
 import org.springframework.http.MediaTypeFactory;
 import org.springframework.http.ResponseEntity;
@@ -46,9 +47,12 @@ public class ProfileImageController {
             return ResponseEntity.badRequest().build();
         }
 
+        // 파일명이 업로드마다 타임스탬프+랜덤값으로 유니크하게 생성되므로
+        // (FileUtil.generateSafeFileName), 같은 파일명이면 내용이 절대 바뀌지 않는다 -> 영구 캐싱 가능
         return storagePort.open(StorageKey.profile(filename))
                 .map(resource -> ResponseEntity.ok()
                         .contentType(contentTypeOf(filename))
+                        .cacheControl(CacheControl.maxAge(java.time.Duration.ofDays(365)).cachePublic().immutable())
                         .body(resource))
                 .orElseGet(() -> ResponseEntity.notFound().build());
     }
