@@ -232,6 +232,11 @@ const Login = () => {
             type="submit"
             size="lg"
             disabled={loading || !serverStatus.connected}
+            onClick={() => {
+              if (!formData.email.trim() || !formData.password) {
+                normalizeFailedLoginUrl();
+              }
+            }}
             data-testid="login-submit-button"
           >
             {loading ? '로그인 중...' : '로그인'}

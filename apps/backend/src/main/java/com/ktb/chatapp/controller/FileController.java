@@ -120,7 +120,9 @@ public class FileController {
             return ResponseEntity.ok(Map.of(
                     "success", true,
                     "upload", target,
-                    "file", Map.of("filename", target.filename())
+                    "file", Map.of(
+                            "filename", target.filename(),
+                            "mimetype", request.mimetype())
             ));
         } catch (IllegalArgumentException e) {
             return ResponseEntity.badRequest().body(Map.of("success", false, "message", e.getMessage()));
