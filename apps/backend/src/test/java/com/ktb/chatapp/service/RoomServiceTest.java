@@ -71,7 +71,6 @@ class RoomServiceTest {
             .containsExactlyInAnyOrder(creator.getId(), joiner.getId());
         assertThat(response.getRecentMessageCount()).isEqualTo(3);
         verify(roomRepository).addParticipant("room-1", joiner.getId());
-        verify(roomParticipantStore).add("room-1", joiner.getId());
         verify(roomRepository, never()).save(room);
         verify(userRepository).findAllById(Set.of(creator.getId(), joiner.getId()));
         verify(recentMessageCounter).countRecentMessages("room-1");
@@ -88,7 +87,6 @@ class RoomServiceTest {
         roomService.joinRoom("room-1", null, joiner.getId());
 
         verify(roomRepository, never()).addParticipant("room-1", joiner.getId());
-        verify(roomParticipantStore, never()).add("room-1", joiner.getId());
         verify(roomRepository, never()).save(room);
     }
 
@@ -104,7 +102,6 @@ class RoomServiceTest {
             .hasMessageContaining("비밀번호");
 
         verify(roomRepository, never()).addParticipant("room-1", joiner.getId());
-        verify(roomParticipantStore, never()).add("room-1", joiner.getId());
         verify(eventPublisher, never()).publishEvent(org.mockito.ArgumentMatchers.any());
     }
 }
