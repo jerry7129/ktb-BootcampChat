@@ -196,12 +196,39 @@ jobs:
       - name: Build standalone frontend
         run: pnpm --dir apps/frontend run build:production
 
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ap-northeast-2
+
+      - name: Upload Next.js static assets to S3
+        env:
+          FRONTEND_STATIC_BUCKET: ${{ vars.FRONTEND_STATIC_BUCKET }}
+        run: |
+          set -euo pipefail
+          : "${FRONTEND_STATIC_BUCKET:?Repository variable FRONTEND_STATIC_BUCKET is required}"
+
+          aws s3 sync \
+            apps/frontend/.next/static/ \
+            "s3://${FRONTEND_STATIC_BUCKET}/_next/static/" \
+            --cache-control "public,max-age=31536000,immutable"
+
       - name: Package frontend release
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p dist/frontend
           cp -a apps/frontend/.next/standalone/. dist/frontend/
+
+          mkdir -p dist/frontend/apps/frontend/.next
+          cp -a apps/frontend/.next/static \
+            dist/frontend/apps/frontend/.next/static
+
+          cp -a apps/frontend/public \
+            dist/frontend/apps/frontend/public
+
           install -m 755 apps/frontend/restart.sh dist/frontend/restart.sh
           tar -C dist/frontend -czf frontend-release.tar.gz .
 

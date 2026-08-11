@@ -1,4 +1,5 @@
 const path = require('path');
+const cloudFrontUrl = process.env.NEXT_PUBLIC_CLOUDFRONT_URL?.replace(/\/+$/, '');
 
 const workspaceRoot = path.join(__dirname, '../..');
 const additionalDevOrigins = (process.env.DEV_ALLOWED_ORIGINS || '')
@@ -25,6 +26,17 @@ const nextConfig = {
   output: 'standalone',
   // monorepo에서 standalone 빌드 시 중첩 경로 방지
   outputFileTracingRoot: workspaceRoot,
+
+  assetPrefix:
+    process.env.NODE_ENV === 'production'
+      ? cloudFrontUrl
+      : undefined,
+
+  transpilePackages: ['@vapor-ui/core', '@vapor-ui/icons'],
+
+  turbopack: {
+    root: workspaceRoot,
+  },
 };
 
 module.exports = nextConfig;
