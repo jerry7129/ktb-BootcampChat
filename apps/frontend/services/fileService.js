@@ -75,41 +75,53 @@ class FileService {
     return { success: true };
   }
 
-  async uploadFile(file, onProgress, token, sessionId) {
+  async uploadFile(file, onProgress) {
     const validationResult = await this.validateFile(file);
     if (!validationResult.success) {
       return validationResult;
     }
 
     try {
-      const formData = new FormData();
-      formData.append('file', file);
-
       const source = CancelToken.source();
       this.activeUploads.set(file.name, source);
 
-      const uploadUrl = this.baseUrl ?
-        `${this.baseUrl}/api/files/upload` :
-        '/api/files/upload';
+      const apiUrl = (path) => this.baseUrl ? `${this.baseUrl}${path}` : path;
+      const presignResponse = await axiosInstance.post(apiUrl('/api/files/uploads/presign'), {
+        originalname: file.name,
+        mimetype: file.type,
+        size: file.size
+      }, {
+        cancelToken: source.token
+      });
 
-      // token과 sessionId는 axios 인터셉터에서 자동으로 추가되므로
-      // 여기서는 명시적으로 전달하지 않아도 됩니다
-      const response = await axiosInstance.post(uploadUrl, formData, {
-        headers: {
-          'Content-Type': 'multipart/form-data'
-        },
-        // 업로드는 한도가 50MB 라 공통 타임아웃으로는 정상 전송도 끊긴다.
+      const upload = presignResponse.data?.upload;
+      if (!presignResponse.data?.success || !upload?.url || !upload?.filename) {
+        throw new Error(presignResponse.data?.message || '업로드 URL을 받지 못했습니다.');
+      }
+
+      await axios.put(upload.url, file, {
+        headers: upload.headers,
         timeout: 30000,
         cancelToken: source.token,
-        withCredentials: true,
+        withCredentials: false,
         onUploadProgress: (progressEvent) => {
           if (onProgress) {
+            const total = progressEvent.total || file.size;
             const percentCompleted = Math.round(
-              (progressEvent.loaded * 100) / progressEvent.total
+              (progressEvent.loaded * 100) / total
             );
             onProgress(percentCompleted);
           }
         }
+      });
+
+      const response = await axiosInstance.post(apiUrl('/api/files/uploads/complete'), {
+        filename: upload.filename,
+        originalname: file.name,
+        mimetype: file.type,
+        size: file.size
+      }, {
+        cancelToken: source.token
       });
 
       this.activeUploads.delete(file.name);
