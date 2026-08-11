@@ -24,6 +24,17 @@ public interface SessionStore {
      * @return the saved session
      */
     Session save(Session session);
+
+    boolean replaceIfMatches(
+            String userId,
+            String expectedSessionId,
+            Session replacement
+    );
+
+    void delete(
+            String userId,
+            String expectedSessionId
+    );
     
     /**
      * Delete all sessions for a user
@@ -31,6 +42,4 @@ public interface SessionStore {
      * @param userId the user identifier
      */
     void deleteAll(String userId);
-    
-    void delete(String userId, String sessionId);
 }

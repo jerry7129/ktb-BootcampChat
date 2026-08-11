@@ -3,6 +3,7 @@ package com.ktb.chatapp.service;
 import com.ktb.chatapp.model.Session;
 import com.ktb.chatapp.service.session.SessionStore;
 import java.time.Instant;
+import java.util.Optional;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -23,6 +24,27 @@ public class SessionService {
     // lastActivity와 expiresAt은 최대 30초에 한 번만 저장
     private static final long SESSION_TOUCH_INTERVAL_MS = 30_000;
 
+    private Session buildNewSession(String userId, SessionMetadata metadata) {
+        long now = Instant.now().toEpochMilli();
+
+        return Session.builder()
+                .userId(userId)
+                .sessionId(generateSessionId())
+                .createdAt(now)
+                .lastActivity(now)
+                .metadata(metadata)
+                .expiresAt(Instant.ofEpochMilli(now).plusSeconds(SESSION_TTL_SEC))
+                .build();
+    }
+
+    private SessionCreationResult toCreationResult(Session session) {
+        return SessionCreationResult.builder()
+                .sessionId(session.getSessionId())
+                .expiresIn(SESSION_TTL_SEC)
+                .sessionData(toSessionData(session))
+                .build();
+    }
+
     private String generateSessionId() {
         return UUID.randomUUID().toString().replace("-", "");
     }
@@ -39,34 +61,44 @@ public class SessionService {
 
     public SessionCreationResult createSession(String userId, SessionMetadata metadata) {
         try {
-            // Remove all existing user sessions
-            removeAllUserSessions(userId);
+            Session session = buildNewSession(userId, metadata);
 
-            String sessionId = generateSessionId();
-            long now = Instant.now().toEpochMilli();
-            
-            Session session = Session.builder()
-                    .userId(userId)
-                    .sessionId(sessionId)
-                    .createdAt(now)
-                    .lastActivity(now)
-                    .metadata(metadata)
-                    .expiresAt(Instant.now().plusSeconds(SESSION_TTL_SEC))
-                    .build();
+            // 같은 userId 키에 SET하므로 기존 세션을 원자적으로 덮어쓴다.
+            Session savedSession = sessionStore.save(session);
 
-            session = sessionStore.save(session);
-            
-            SessionData sessionData = toSessionData(session);
-
-            return SessionCreationResult.builder()
-                    .sessionId(sessionId)
-                    .expiresIn(SESSION_TTL_SEC)
-                    .sessionData(sessionData)
-                    .build();
-
+            return toCreationResult(savedSession);
         } catch (Exception e) {
             log.error("Session creation error for userId: {}", userId, e);
             throw new RuntimeException("세션 생성 중 오류가 발생했습니다.", e);
+        }
+    }
+
+    public Optional<SessionCreationResult> rotateSession(
+            String userId,
+            String currentSessionId,
+            SessionMetadata metadata
+    ) {
+        try {
+            if (userId == null || currentSessionId == null) {
+                return Optional.empty();
+            }
+
+            Session newSession = buildNewSession(userId, metadata);
+
+            boolean replaced = sessionStore.replaceIfMatches(userId, currentSessionId, newSession);
+
+            if (!replaced) {
+                log.debug("Session rotation rejected: userId={}, sessionId={}", userId, currentSessionId);
+
+                return Optional.empty();
+            }
+
+            return Optional.of( toCreationResult(newSession));
+
+        } catch (Exception e) {
+            log.error("Session rotation failed for userId: {}", userId, e);
+
+            throw new RuntimeException("세션 갱신 중 오류가 발생했습니다.", e);
         }
     }
 
@@ -177,5 +209,4 @@ public class SessionService {
             return null;
         }
     }
-    
 }

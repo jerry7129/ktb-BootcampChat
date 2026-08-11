@@ -349,23 +349,32 @@ public class AuthController {
                         .body(new TokenRefreshResponse(false, "사용자를 찾을 수 없습니다.", null, null));
             }
 
-
-            // 세션 유효성 검증
             var user = userOpt.get();
-            if (!sessionService.validateSession(user.getId(), sessionId).isValid()) {
-                return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
-                        .body(new TokenRefreshResponse(false, "만료된 세션입니다.", null, null));
-            }
 
-            // 세션 갱신 - 새로운 세션 ID 생성
-            sessionService.removeSession(user.getId(), sessionId);
             SessionMetadata metadata = new SessionMetadata(
                     request.getHeader("User-Agent"),
                     getClientIpAddress(request),
                     request.getHeader("User-Agent")
             );
 
-            SessionCreationResult newSessionInfo = sessionService.createSession(user.getId(), metadata);
+            Optional<SessionCreationResult> rotatedSession =
+                    sessionService.rotateSession(
+                            user.getId(),
+                            sessionId,
+                            metadata
+                    );
+
+            if (rotatedSession.isEmpty()) {
+                return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                        .body(new TokenRefreshResponse(
+                                false,
+                                "만료되었거나 이미 갱신된 세션입니다.",
+                                null,
+                                null
+                        ));
+            }
+
+            SessionCreationResult newSessionInfo = rotatedSession.get();
 
             // 새로운 토큰과 세션 ID 생성
             String newToken = jwtService.generateToken(
