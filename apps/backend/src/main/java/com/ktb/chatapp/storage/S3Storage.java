@@ -1,12 +1,17 @@
 package com.ktb.chatapp.storage;
 
 import java.io.InputStream;
+import java.net.URI;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.util.Optional;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.core.io.InputStreamResource;
 import org.springframework.core.io.Resource;
+import org.springframework.http.ContentDisposition;
 import org.springframework.stereotype.Component;
 import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.regions.Region;
@@ -36,15 +41,18 @@ public class S3Storage implements StoragePort {
 
     private final S3Client s3Client;
     private final String bucket;
+    private final String cloudFrontUrl;
 
     public S3Storage(
             @Value("${file.s3.bucket}") String bucket,
-            @Value("${file.s3.region:ap-northeast-2}") String region) {
+            @Value("${file.s3.region:ap-northeast-2}") String region,
+            @Value("${file.cloudfront.url:https://d2nsun7j7a460i.cloudfront.net}") String cloudFrontUrl) {
         if (bucket == null || bucket.isBlank()) {
             throw new IllegalStateException(
                     "file.storage.type=s3 인데 file.s3.bucket(FILE_S3_BUCKET)이 비어있습니다.");
         }
         this.bucket = bucket;
+        this.cloudFrontUrl = cloudFrontUrl.replaceAll("/+$", "");
         this.s3Client = S3Client.builder().region(Region.of(region)).build();
     }
 
@@ -91,5 +99,18 @@ public class S3Storage implements StoragePort {
         } catch (S3Exception ex) {
             throw new RuntimeException("파일 삭제에 실패했습니다: " + ex.getMessage(), ex);
         }
+    }
+
+    @Override
+    public Optional<URI> offloadUrl(String key, Duration ttl, ContentDisposition disposition) {
+        return publicUrl(key);
+    }
+
+    @Override
+    public Optional<URI> publicUrl(String key) {
+        String encodedKey = java.util.Arrays.stream(key.split("/"))
+                .map(segment -> URLEncoder.encode(segment, StandardCharsets.UTF_8).replace("+", "%20"))
+                .collect(java.util.stream.Collectors.joining("/"));
+        return Optional.of(URI.create(cloudFrontUrl + "/" + encodedKey));
     }
 }

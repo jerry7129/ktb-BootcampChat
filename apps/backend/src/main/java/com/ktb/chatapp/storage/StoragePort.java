@@ -20,4 +20,9 @@ public interface StoragePort {
     default Optional<URI> offloadUrl(String key, Duration ttl, ContentDisposition disposition) {
         return Optional.empty();
     }
+
+    /** 공개 자산을 애플리케이션 경로에서 CDN으로 리다이렉트할 때 사용할 URL. */
+    default Optional<URI> publicUrl(String key) {
+        return Optional.empty();
+    }
 }

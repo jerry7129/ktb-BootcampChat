@@ -49,6 +49,9 @@ const CustomAvatar = forwardRef(({
     if (imagePath.startsWith('http')) {
       return imagePath;
     }
+    if (imagePath.startsWith('/api/files/')) {
+      return imagePath;
+    }
     return getCloudFrontFileUrl(imagePath, 'profiles');
   }, [src]);
 

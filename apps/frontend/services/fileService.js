@@ -1,7 +1,6 @@
 import axios, { isCancel, CancelToken } from 'axios';
 import axiosInstance from './axios';
 import { Toast } from '../components/Toast';
-import { getCloudFrontFileUrl } from '../utils/fileUrl';
 
 class FileService {
   constructor() {
@@ -164,15 +163,14 @@ class FileService {
   }
   getFileUrl(filename, forPreview = false) {
     if (!filename) return '';
-    if (forPreview) return getCloudFrontFileUrl(filename, 'chat');
-
     const baseUrl = process.env.NEXT_PUBLIC_API_URL || '';
+    if (forPreview) return `${baseUrl}/api/files/view/${encodeURIComponent(filename)}`;
     return `${baseUrl}/api/files/download/${filename}`;
   }
 
   getPreviewUrl(file) {
     if (!file?.filename) return '';
-    return getCloudFrontFileUrl(file.filename, 'chat');
+    return this.getFileUrl(file.filename, true);
   }
 
   getFileExtension(filename) {

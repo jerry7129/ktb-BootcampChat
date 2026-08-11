@@ -42,6 +42,17 @@ public class FileAccessService {
 
     public FileAccess forView(String fileName, String requesterId) {
         File fileEntity = authorize(fileName, requesterId);
+        return preview(fileEntity, fileName, requesterId);
+    }
+
+    /** 인증 도입 전 공개 미리보기 경로. 외부 URL 계약은 유지한 채 추후 권한 검사로 교체할 수 있다. */
+    public FileAccess forPublicView(String fileName) {
+        File fileEntity = fileRepository.findByFilename(fileName)
+                .orElseThrow(() -> new RuntimeException("파일을 찾을 수 없습니다: " + fileName));
+        return preview(fileEntity, fileName, "anonymous");
+    }
+
+    private FileAccess preview(File fileEntity, String fileName, String requesterId) {
         if (!fileEntity.isPreviewable()) {
             throw new PreviewNotSupportedException("미리보기를 지원하지 않는 파일 형식입니다.");
         }

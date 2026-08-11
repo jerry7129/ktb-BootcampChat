@@ -115,7 +115,13 @@ public class FileController {
             PresignedUploadService service = requirePresignedUploadService();
             PresignedUploadService.UploadTarget target = service.prepare(
                     request.originalname(), request.mimetype(), request.size());
-            return ResponseEntity.ok(Map.of("success", true, "upload", target));
+            // /api/files/upload을 기다리는 기존 클라이언트도 presign 응답에서
+            // 최종 파일 식별자를 안전하게 읽을 수 있도록 동일 filename을 노출한다.
+            return ResponseEntity.ok(Map.of(
+                    "success", true,
+                    "upload", target,
+                    "file", Map.of("filename", target.filename())
+            ));
         } catch (IllegalArgumentException e) {
             return ResponseEntity.badRequest().body(Map.of("success", false, "message", e.getMessage()));
         } catch (RuntimeException e) {
@@ -282,10 +288,16 @@ public class FileController {
             HttpServletRequest request,
             Principal principal) {
         try {
-            User user = userRepository.findByEmail(principal.getName())
-                    .orElseThrow(() -> new UsernameNotFoundException("User not found: " + principal.getName()));
+            FileAccess access;
+            if (principal == null) {
+                access = fileAccessService.forPublicView(filename);
+            } else {
+                User user = userRepository.findByEmail(principal.getName())
+                        .orElseThrow(() -> new UsernameNotFoundException("User not found: " + principal.getName()));
+                access = fileAccessService.forView(filename, user.getId());
+            }
 
-            return switch (fileAccessService.forView(filename, user.getId())) {
+            return switch (access) {
                 case FileAccess.Stream stream -> inlineResponse(stream);
                 case FileAccess.Redirect redirect -> redirectResponse(redirect);
             };

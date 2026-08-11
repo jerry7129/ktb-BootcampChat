@@ -18,6 +18,7 @@ const ProfileImageUpload = ({ currentImage, onImageChange }) => {
   // 프로필 이미지 URL 생성
   const getProfileImageUrl = (imagePath) => {
     if (!imagePath) return null;
+    if (imagePath.startsWith('/api/files/')) return imagePath;
     return getCloudFrontFileUrl(imagePath, 'profiles');
   };
 
