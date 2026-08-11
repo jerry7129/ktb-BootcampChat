@@ -384,6 +384,26 @@ jobs:
             exit 1
           fi
 
+      - name: Upload backend environment
+        shell: bash
+        env:
+          BACKEND_ENV: ${{ secrets.BACKEND_ENV }}
+          DEPLOY_HOST: ${{ matrix.host }}
+          DEPLOY_USER: ${{ vars.EC2_USERNAME }}
+        run: |
+          set -euo pipefail
+          : "${BACKEND_ENV:?Repository secret BACKEND_ENV is required}"
+          : "${DEPLOY_USER:?Repository variable EC2_USERNAME is required}"
+
+          local_env="$(mktemp)"
+          trap 'rm -f "$local_env"' EXIT
+          chmod 600 "$local_env"
+          printf '%s\n' "$BACKEND_ENV" > "$local_env"
+
+          remote_env="/tmp/ktb-backend-${GITHUB_SHA}.env"
+          scp -i ~/.ssh/id_ec2 "$local_env" \
+            "$DEPLOY_USER@$DEPLOY_HOST:$remote_env"
+
       - name: Upload and activate backend release
         shell: bash
         env:
@@ -394,17 +414,35 @@ jobs:
           : "${DEPLOY_USER:?Repository variable EC2_USERNAME is required}"
 
           remote_archive="/tmp/ktb-backend-${GITHUB_SHA}.tar.gz"
+          remote_env="/tmp/ktb-backend-${GITHUB_SHA}.env"
           scp -i ~/.ssh/id_ec2 backend-release.tar.gz \
             "$DEPLOY_USER@$DEPLOY_HOST:$remote_archive"
 
           ssh -i ~/.ssh/id_ec2 "$DEPLOY_USER@$DEPLOY_HOST" \
-            'bash -s' -- "$BACKEND_DEPLOY_ROOT" "$GITHUB_SHA" "$remote_archive" <<'REMOTE'
+            'bash -s' -- \
+            "$BACKEND_DEPLOY_ROOT" "$GITHUB_SHA" "$remote_archive" "$remote_env" <<'REMOTE'
           set -euo pipefail
           deploy_root="$1"
           release_id="$2"
           archive="$3"
+          environment_file="$4"
           release_dir="$deploy_root/releases/$release_id"
           previous_release=""
+          previous_environment=""
+
+          cleanup() {
+            rm -f "$archive" "$environment_file"
+            if [[ -n "$previous_environment" ]]; then
+              rm -f "$previous_environment"
+            fi
+          }
+          trap cleanup EXIT
+
+          if [[ ! -s "$environment_file" ]]; then
+            echo "Uploaded backend environment file is missing or empty." >&2
+            exit 1
+          fi
+
           if [[ -L "$deploy_root/current" ]]; then
             candidate="$(readlink -e "$deploy_root/current" 2>/dev/null || true)"
             if [[ "$candidate" == "$deploy_root/releases/"* && -d "$candidate" ]]; then
@@ -419,15 +457,16 @@ jobs:
 
           mkdir -p "$release_dir/logs" "$deploy_root/uploads"
           tar -xzf "$archive" -C "$release_dir"
-          rm -f "$archive"
           chmod +x "$release_dir/app-control.sh"
 
           if [[ -f "$deploy_root/.env" ]]; then
-            ln -sfn "$deploy_root/.env" "$release_dir/.env"
-          else
-            echo "Missing persistent backend environment file: $deploy_root/.env" >&2
-            exit 1
+            previous_environment="$(mktemp "$deploy_root/.env.rollback.XXXXXX")"
+            cp -p "$deploy_root/.env" "$previous_environment"
           fi
+
+          install -m 600 "$environment_file" "$deploy_root/.env.next"
+          mv -f "$deploy_root/.env.next" "$deploy_root/.env"
+          ln -sfn "$deploy_root/.env" "$release_dir/.env"
           ln -sfn "$deploy_root/uploads" "$release_dir/uploads"
 
           ln -sfn "$release_dir" "$deploy_root/current.next"
@@ -439,6 +478,10 @@ jobs:
             tail -n 100 "$deploy_root/logs/systemd.log" || true
             if [[ -n "$previous_release" && -d "$previous_release" ]]; then
               echo "Backend restart failed; rolling back to $previous_release" >&2
+              if [[ -n "$previous_environment" && -f "$previous_environment" ]]; then
+                cp -p "$previous_environment" "$deploy_root/.env.next"
+                mv -f "$deploy_root/.env.next" "$deploy_root/.env"
+              fi
               ln -sfn "$previous_release" "$deploy_root/current.next"
               mv -Tf "$deploy_root/current.next" "$deploy_root/current"
               (cd "$deploy_root/current" && ./app-control.sh restart) || true
