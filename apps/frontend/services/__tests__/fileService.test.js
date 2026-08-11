@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import fileService from '../fileService';
 import { getCloudFrontFileUrl } from '../../utils/fileUrl';
+import axios from 'axios';
+import axiosInstance from '../axios';
 
 vi.mock('../../components/Toast', () => ({
   Toast: {
@@ -45,6 +47,63 @@ describe('fileService', () => {
   it('maps legacy profile API paths to the profiles CloudFront key', () => {
     expect(getCloudFrontFileUrl('/api/files/profiles/avatar.png', 'profiles')).toBe(
       'https://d2nsun7j7a460i.cloudfront.net/profiles/avatar.png'
+    );
+  });
+
+  it('uploads file bytes directly to the presigned S3 URL before completing metadata', async () => {
+    const file = new File(['png'], 'sample.png', { type: 'image/png' });
+    const post = vi.spyOn(axiosInstance, 'post')
+      .mockResolvedValueOnce({
+        data: {
+          success: true,
+          upload: {
+            url: 'https://s3.example.test/presigned',
+            filename: 'generated.png',
+            headers: {
+              'Content-Type': 'image/png',
+              'Cache-Control': 'public, max-age=31536000, immutable',
+            },
+          },
+        },
+      })
+      .mockResolvedValueOnce({
+        data: {
+          success: true,
+          file: { filename: 'generated.png' },
+        },
+      });
+    const put = vi.spyOn(axios, 'put').mockResolvedValue({ status: 200 });
+
+    const result = await fileService.uploadFile(file);
+
+    expect(post).toHaveBeenNthCalledWith(
+      1,
+      '/api/files/uploads/presign',
+      { originalname: 'sample.png', mimetype: 'image/png', size: file.size },
+      expect.any(Object)
+    );
+    expect(put).toHaveBeenCalledWith(
+      'https://s3.example.test/presigned',
+      file,
+      expect.objectContaining({
+        headers: expect.objectContaining({ 'Content-Type': 'image/png' }),
+        withCredentials: false,
+      })
+    );
+    expect(post).toHaveBeenNthCalledWith(
+      2,
+      '/api/files/uploads/complete',
+      {
+        filename: 'generated.png',
+        originalname: 'sample.png',
+        mimetype: 'image/png',
+        size: file.size,
+      },
+      expect.any(Object)
+    );
+    expect(result.success).toBe(true);
+    expect(result.data.file.url).toBe(
+      'https://d2nsun7j7a460i.cloudfront.net/chat/generated.png'
     );
   });
 });

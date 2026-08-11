@@ -51,7 +51,17 @@ public class FileUtil {
             throw new RuntimeException("파일이 비어있습니다.");
         }
 
-        String originalFilename = file.getOriginalFilename();
+        validateFileMetadata(file.getOriginalFilename(), file.getContentType(), file.getSize());
+    }
+
+    /**
+     * Presigned upload처럼 파일 바이트를 서버가 받지 않는 경로에서 메타데이터를 검증한다.
+     */
+    public static void validateFileMetadata(String originalFilename, String contentType, long size) {
+        if (size <= 0) {
+            throw new RuntimeException("파일이 비어있습니다.");
+        }
+
         if (originalFilename == null || originalFilename.trim().isEmpty()) {
             throw new RuntimeException("파일명이 올바르지 않습니다.");
         }
@@ -63,7 +73,6 @@ public class FileUtil {
         }
 
         // MIME 타입 검증
-        String contentType = file.getContentType();
         if (contentType == null || !ALLOWED_TYPES.containsKey(contentType)) {
             throw new RuntimeException("지원하지 않는 파일 형식입니다.");
         }
@@ -80,7 +89,7 @@ public class FileUtil {
         String type = contentType.split("/")[0];
         long limit = FILE_SIZE_LIMITS.getOrDefault(type, FILE_SIZE_LIMITS.get("application"));
         
-        if (file.getSize() > limit) {
+        if (size > limit) {
             int limitInMB = (int) (limit / 1024 / 1024);
             String fileType = getFileType(contentType);
             throw new RuntimeException(fileType + " 파일은 " + limitInMB + "MB를 초과할 수 없습니다.");
