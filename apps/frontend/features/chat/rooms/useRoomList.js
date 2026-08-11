@@ -8,7 +8,6 @@ export const useRoomList = ({
   connectionStatus,
   setConnectionStatus,
   isRetrying,
-  attemptConnection,
 }) => {
   const [rooms, setRooms] = useState([]);
   const [error, setError] = useState(null);

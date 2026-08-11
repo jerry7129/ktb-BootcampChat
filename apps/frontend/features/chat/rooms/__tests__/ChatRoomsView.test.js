@@ -70,16 +70,14 @@ describe('ChatRoomsView', () => {
     vi.useRealTimers();
   });
 
-  it('checks server health before fetching the initial room list', async () => {
+  it('fetches the initial room list without a preceding health check', async () => {
     const { rerender } = render(<ChatRoomsView router={{ push: vi.fn() }} />);
 
     await waitFor(() => {
-      expect(mocks.attemptConnection).toHaveBeenCalledTimes(1);
       expect(mocks.fetchRooms).toHaveBeenCalledTimes(1);
     });
 
-    expect(mocks.attemptConnection.mock.invocationCallOrder[0])
-      .toBeLessThan(mocks.fetchRooms.mock.invocationCallOrder[0]);
+    expect(mocks.attemptConnection).not.toHaveBeenCalled();
 
     mocks.connectionStatus = CONNECTION_STATUS.CONNECTED;
     rerender(<ChatRoomsView router={{ push: vi.fn() }} />);
@@ -89,16 +87,16 @@ describe('ChatRoomsView', () => {
     expect(mocks.fetchRooms).toHaveBeenCalledTimes(1);
   });
 
-  it('does not fetch rooms when the initial health check fails', async () => {
-    mocks.attemptConnection.mockRejectedValueOnce(new Error('SERVER_UNREACHABLE'));
+  it('does not fall back to a health check when the initial room fetch fails', async () => {
+    mocks.fetchRooms.mockRejectedValueOnce(new Error('SERVER_UNREACHABLE'));
 
     render(<ChatRoomsView router={{ push: vi.fn() }} />);
 
     await waitFor(() => {
-      expect(mocks.attemptConnection).toHaveBeenCalledTimes(1);
+      expect(mocks.fetchRooms).toHaveBeenCalledTimes(1);
     });
 
-    expect(mocks.fetchRooms).not.toHaveBeenCalled();
+    expect(mocks.attemptConnection).not.toHaveBeenCalled();
   });
 
   it('refreshes the room list on an interval while connected', async () => {

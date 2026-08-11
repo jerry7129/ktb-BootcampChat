@@ -55,7 +55,6 @@ export default function ChatRoomsView({ router }) {
     connectionStatus,
     setConnectionStatus,
     isRetrying,
-    attemptConnection,
   });
 
   const connectionCheckTimerRef = useRef(null);
@@ -80,16 +79,10 @@ export default function ChatRoomsView({ router }) {
 
     const initFetch = async () => {
       try {
-        // 방 목록을 연결 확인 수단으로 사용하지 않는다. 먼저 health 확인을
-        // 완료해야 과부하/무응답 상태에서 목록 요청과 정상 화면 렌더링이
-        // 앞질러 가는 일이 없다.
-        await attemptConnection();
-
         if (cancelled) return;
         await fetchRooms();
       } catch {
-        // attemptConnection이 연결 상태를 ERROR로 변경한다. 사용자가 화면의
-        // 재연결 버튼을 눌렀을 때 다시 시도한다.
+        // fetchRooms가 연결 상태와 오류 화면을 갱신한다.
       }
     };
 
@@ -98,7 +91,7 @@ export default function ChatRoomsView({ router }) {
     return () => {
       cancelled = true;
     };
-  }, [currentUserKey, attemptConnection, fetchRooms]);
+  }, [currentUserKey, fetchRooms]);
 
   useEffect(() => {
     if (!currentUserKey || connectionStatus !== CONNECTION_STATUS.CHECKING) return;
