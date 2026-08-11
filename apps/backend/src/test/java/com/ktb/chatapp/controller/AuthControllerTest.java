@@ -72,6 +72,34 @@ public class AuthControllerTest {
 
     @Test
     @WithAnonymousUser
+    void registerUser_whenEmailIsDuplicated_shouldReturnConflict() throws Exception {
+        String email = "duplicate" + System.currentTimeMillis() + "@example.com";
+
+        RegisterRequest request = new RegisterRequest();
+        request.setName("Test User");
+        request.setEmail(email);
+        request.setPassword("Password123!");
+
+        String body = objectMapper.writeValueAsString(request);
+
+        mockMvc.perform(post("/api/auth/register")
+                        .with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isCreated());
+
+        mockMvc.perform(post("/api/auth/register")
+                        .with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.message")
+                        .value("이미 등록된 이메일입니다."));
+    }
+
+    @Test
+    @WithAnonymousUser
     public void registerUser_whenRequestIsInvalid_shouldReturnValidationErrorContract() throws Exception {
         RegisterRequest registerRequest = new RegisterRequest();
         registerRequest.setName("");

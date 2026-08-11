@@ -88,12 +88,6 @@ public class AuthController {
         // Handle validation errors
         ResponseEntity<?> errors = getBindingError(bindingResult);
         if (errors != null) return errors;
-        
-        // Check existing user
-        if (userRepository.findByEmail(registerRequest.getEmail()).isPresent()) {
-            return ResponseEntity.status(HttpStatus.CONFLICT)
-                    .body(StandardResponse.error("이미 등록된 이메일입니다."));
-        }
 
         try {
             // Create user
@@ -122,7 +116,7 @@ public class AuthController {
                     .body(response);
 
         } catch (org.springframework.dao.DuplicateKeyException e) {
-            log.error("Register error: ", e);
+            log.warn("Duplicate registration attempt");
             return ResponseEntity.status(HttpStatus.CONFLICT)
                     .body(StandardResponse.error("이미 등록된 이메일입니다."));
         } catch (IllegalArgumentException e) {
