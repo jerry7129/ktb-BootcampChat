@@ -204,10 +204,9 @@ public class RoomService {
 
         // JWT에서 받은 userId를 직접 사용한다.
         if (!room.getParticipantIds().contains(userId)) {
-            // MongoDB와 Redis의 참여자 집합을 같은 ID로 갱신한다.
+            // 방 문서 전체를 저장하지 않고 참가자 한 명만 원자적으로 추가한다.
             roomRepository.addParticipant(roomId, userId);
             room.addParticipant(userId);
-            roomParticipantStore.add(roomId, userId);
         }
 
         RoomResponse roomResponse =
