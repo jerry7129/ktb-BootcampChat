@@ -83,7 +83,7 @@ export const createApiClient = ({
           window.location.pathname !== '/' &&
           window.location.pathname !== '/login'
         ) {
-          window.location.href = '/';
+          window.location.href = '/login';
         }
 
         throw createAuthExpiredError(error, config);

@@ -128,7 +128,7 @@ export const useRoomHandling = ({
 
     if (mountedRef.current) {
       await logout();
-      onReplace('/?redirect=' + asPath);
+      onReplace('/login?redirect=' + encodeURIComponent(asPath));
     }
     return false;
   }, [user, refreshToken, mountedRef, logout, onReplace, asPath]);

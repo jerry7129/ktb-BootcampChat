@@ -80,7 +80,7 @@ export const AuthProviderWithRouter = ({ children, router }) => {
         // 세션 만료됨
         setUser(null);
         socketService.disconnect();
-        router.replace('/');
+        router.replace('/login');
       }
     }, 5 * 60 * 1000);
 
@@ -120,7 +120,7 @@ export const AuthProviderWithRouter = ({ children, router }) => {
       saveUser(null);
 
       // 로그인 페이지로 이동
-      router.push('/');
+      router.push('/login');
     }
   }, [user, saveUser, router]);
 
@@ -285,7 +285,7 @@ export const withAuth = (WrappedComponent) => {
     useEffect(() => {
       // 로딩이 끝나고 인증되지 않은 경우 리다이렉트
       if (!isLoading && !isAuthenticated) {
-        router.replace('/?redirect=' + router.asPath);
+        router.replace('/login?redirect=' + encodeURIComponent(router.asPath));
       }
     }, [isAuthenticated, isLoading, router]);
 

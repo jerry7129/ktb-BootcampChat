@@ -188,7 +188,7 @@ export const useChatRoomLifecycle = ({
       if (initializingRef.current) return;
 
       if (!authUser) {
-        onReplace('/?redirect=' + asPath);
+        onReplace('/login?redirect=' + encodeURIComponent(asPath));
         return;
       }
 
@@ -230,7 +230,7 @@ export const useChatRoomLifecycle = ({
 
       if (!authUser) {
         clearInterval(tokenCheckInterval);
-        onReplace('/?redirect=' + asPath);
+        onReplace('/login?redirect=' + encodeURIComponent(asPath));
       }
     }, 60000);
 

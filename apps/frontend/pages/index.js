@@ -32,6 +32,12 @@ const Login = () => {
   const router = useRouter();
   const { login } = useAuth();
 
+  const normalizeFailedLoginUrl = () => {
+    if (typeof window !== 'undefined' && window.location.pathname === '/login') {
+      window.history.replaceState(window.history.state, '', '/');
+    }
+  };
+
   // 서버 연결 상태 확인
   useEffect(() => {
     // 클라이언트 사이드에서만 실행되도록 보장
@@ -110,6 +116,7 @@ const Login = () => {
       router.push(redirectUrl);
 
     } catch (err) {
+      normalizeFailedLoginUrl();
       setError(err.message || '로그인 처리 중 오류가 발생했습니다.');
     } finally {
       setLoading(false);
@@ -149,7 +156,7 @@ const Login = () => {
           borderRadius: '$300',
           border: '1px solid var(--vapor-color-border-normal)',
         }}
-        render={<Form onSubmit={handleSubmit} />}
+        render={<Form onSubmit={handleSubmit} onInvalid={normalizeFailedLoginUrl} />}
       >
         <div className="text-center mb-4">
           <img src="images/logo-h.png" className="w-1/2 mx-auto" alt="KTB Chat 로고" />
