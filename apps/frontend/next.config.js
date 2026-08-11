@@ -18,15 +18,7 @@ const nextConfig = {
     '10.*.*.*',
     ...additionalDevOrigins
   ],
-  transpilePackages: ['@vapor-ui/core', '@vapor-ui/icons'],
-  turbopack: {
-    root: workspaceRoot
-  },
-  // Docker 빌드를 위한 standalone 출력 모드 (개발 환경에는 영향 없음)
-  output: 'standalone',
-  // monorepo에서 standalone 빌드 시 중첩 경로 방지
-  outputFileTracingRoot: workspaceRoot,
-
+  
   assetPrefix:
     process.env.NODE_ENV === 'production'
       ? cloudFrontUrl
@@ -37,6 +29,10 @@ const nextConfig = {
   turbopack: {
     root: workspaceRoot,
   },
+  // Docker 빌드를 위한 standalone 출력 모드 (개발 환경에는 영향 없음)
+  output: 'standalone',
+  // monorepo에서 standalone 빌드 시 중첩 경로 방지
+  outputFileTracingRoot: workspaceRoot,
 };
 
 module.exports = nextConfig;
