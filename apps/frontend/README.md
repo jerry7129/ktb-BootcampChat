@@ -205,7 +205,7 @@ frontend/
 | 경로 | 화면 | 라우터 |
 |------|------|--------|
 | `/` | 로그인 페이지 | Pages |
-| `/login` | `/` 로 리다이렉트 (호환용) | App |
+| `/login` | 로그인 | Pages Router |
 | `/register` | 회원가입 | Pages |
 | `/profile` | 사용자 프로필 | Pages |
 | `/chat` | 채팅방 목록 | App |

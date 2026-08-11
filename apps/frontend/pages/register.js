@@ -56,7 +56,7 @@ const Register = () => {
       setLoading(false);
       
       setTimeout(() => {
-        router.push('/');
+        router.push('/login');
       }, 1000);
     } catch (err) {
       setError(err.message || '회원가입 처리 중 오류가 발생했습니다.');
@@ -209,7 +209,7 @@ const Register = () => {
             type="button"
             size="sm"
             variant="ghost"
-            onClick={() => router.push('/')}
+            onClick={() => router.push('/login')}
             disabled={loading}
           >
             로그인

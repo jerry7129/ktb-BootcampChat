@@ -25,11 +25,6 @@ const nextConfig = {
   output: 'standalone',
   // monorepo에서 standalone 빌드 시 중첩 경로 방지
   outputFileTracingRoot: workspaceRoot,
-  async redirects() {
-    return [
-      { source: '/login', destination: '/', permanent: false },
-    ];
-  }
 };
 
 module.exports = nextConfig;
