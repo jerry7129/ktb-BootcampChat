@@ -103,6 +103,14 @@ public class S3Storage implements StoragePort {
 
     @Override
     public Optional<URI> offloadUrl(String key, Duration ttl, ContentDisposition disposition) {
+        // 공개 CloudFront URL은 Content-Disposition 응답 헤더를 요청별로 바꿀 수 없다.
+        // attachment 요청까지 리다이렉트하면 브라우저가 파일을 새 페이지에서 열어
+        // 다운로드 이벤트와 원본 파일명이 사라지므로, 다운로드는 컨트롤러가 직접
+        // 스트리밍하면서 attachment 헤더를 붙이게 한다.
+        if (disposition != null && "attachment".equalsIgnoreCase(disposition.getType())) {
+            return Optional.empty();
+        }
+
         return publicUrl(key);
     }
 
