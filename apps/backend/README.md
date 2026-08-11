@@ -101,6 +101,30 @@ make verify-java
 
 `.env.template` 파일을 복사해 기본 값을 채운 뒤 필요에 따라 수정하세요.
 
+### S3 Presigned 직접 업로드
+
+`FILE_STORAGE_TYPE=s3`일 때 채팅 첨부파일은 백엔드에서 10분짜리 PUT URL을 발급받아
+브라우저에서 S3로 직접 업로드한다. S3 버킷에 다음 CORS 설정이 필요하다.
+
+```json
+[
+  {
+    "AllowedHeaders": ["*"],
+    "AllowedMethods": ["PUT"],
+    "AllowedOrigins": [
+      "https://chat.goorm-ktb-007.goorm.team",
+      "http://localhost:3000"
+    ],
+    "ExposeHeaders": ["ETag"],
+    "MaxAgeSeconds": 86400
+  }
+]
+```
+
+업로드 순서는 `POST /api/files/uploads/presign` → S3 `PUT` →
+`POST /api/files/uploads/complete`이다. 마지막 단계에서 백엔드가 S3 객체의 크기와 MIME 타입을
+확인한 후 MongoDB에 파일 메타데이터를 저장한다.
+
 예시:
 ```bash
 cp .env .env.backup 2>/dev/null || true

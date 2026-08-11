@@ -4,6 +4,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.redirectedUrl;
@@ -16,11 +17,13 @@ import com.ktb.chatapp.service.FileAccess;
 import com.ktb.chatapp.service.FileAccessService;
 import com.ktb.chatapp.service.FileService;
 import com.ktb.chatapp.service.PreviewNotSupportedException;
+import com.ktb.chatapp.service.PresignedUploadService;
 import com.ktb.chatapp.service.RateLimitService;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.security.Principal;
 import java.util.Optional;
+import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -65,6 +68,9 @@ class FileControllerTest {
 
     @MockitoBean
     private UserRepository userRepository;
+
+    @MockitoBean
+    private PresignedUploadService presignedUploadService;
 
     /** RateLimitInterceptor가 웹 슬라이스에 함께 올라오므로 그 의존성도 채워야 한다. */
     @MockitoBean
@@ -191,6 +197,54 @@ class FileControllerTest {
         mockMvc.perform(delete("/api/files/{id}", "file-1").principal(PRINCIPAL))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.message").value("파일을 삭제할 권한이 없습니다."));
+    }
+
+    @Test
+    @DisplayName("Presigned upload URL 발급")
+    void createPresignedUpload_returnsDirectUploadTarget() throws Exception {
+        when(presignedUploadService.prepare(ORIGINAL_NAME, "image/png", 11L))
+                .thenReturn(new PresignedUploadService.UploadTarget(
+                        "https://s3.example.test/presigned",
+                        FILE_NAME,
+                        Map.of("Content-Type", "image/png"),
+                        600L));
+
+        mockMvc.perform(post("/api/files/uploads/presign")
+                        .principal(PRINCIPAL)
+                        .contentType("application/json")
+                        .content("""
+                                {"originalname":"여행 사진.png","mimetype":"image/png","size":11}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.upload.filename").value(FILE_NAME))
+                .andExpect(jsonPath("$.upload.url").value("https://s3.example.test/presigned"));
+    }
+
+    @Test
+    @DisplayName("S3 업로드 확정 후 파일 메타데이터 반환")
+    void completePresignedUpload_returnsFileMetadata() throws Exception {
+        com.ktb.chatapp.model.File saved = com.ktb.chatapp.model.File.builder()
+                .id("file-1")
+                .filename(FILE_NAME)
+                .originalname(ORIGINAL_NAME)
+                .mimetype("image/png")
+                .size(11L)
+                .user(USER_ID)
+                .build();
+        when(presignedUploadService.complete(FILE_NAME, ORIGINAL_NAME, "image/png", 11L, USER_ID))
+                .thenReturn(saved);
+
+        mockMvc.perform(post("/api/files/uploads/complete")
+                        .principal(PRINCIPAL)
+                        .contentType("application/json")
+                        .content("""
+                                {"filename":"%s","originalname":"여행 사진.png","mimetype":"image/png","size":11}
+                                """.formatted(FILE_NAME)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.file._id").value("file-1"))
+                .andExpect(jsonPath("$.file.filename").value(FILE_NAME));
     }
 
     private FileAccess stream() {

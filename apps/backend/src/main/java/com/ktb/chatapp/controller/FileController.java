@@ -1,6 +1,9 @@
 package com.ktb.chatapp.controller;
 
 import com.ktb.chatapp.dto.StandardResponse;
+import com.ktb.chatapp.dto.CompleteUploadRequest;
+import com.ktb.chatapp.dto.PresignedUploadRequest;
+import com.ktb.chatapp.model.File;
 import com.ktb.chatapp.model.User;
 import com.ktb.chatapp.repository.UserRepository;
 import com.ktb.chatapp.service.FileAccess;
@@ -8,6 +11,7 @@ import com.ktb.chatapp.service.FileAccessService;
 import com.ktb.chatapp.service.FileService;
 import com.ktb.chatapp.service.FileUploadResult;
 import com.ktb.chatapp.service.PreviewNotSupportedException;
+import com.ktb.chatapp.service.PresignedUploadService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.media.Content;
@@ -27,6 +31,7 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
@@ -41,6 +46,7 @@ public class FileController {
     private final FileService fileService;
     private final FileAccessService fileAccessService;
     private final UserRepository userRepository;
+    private final ObjectProvider<PresignedUploadService> presignedUploadServiceProvider;
 
     /**
      * 파일 업로드
@@ -98,6 +104,76 @@ public class FileController {
             errorResponse.put("error", e.getMessage());
             return ResponseEntity.status(500).body(errorResponse);
         }
+    }
+
+    @PostMapping("/uploads/presign")
+    public ResponseEntity<?> createPresignedUpload(
+            @RequestBody PresignedUploadRequest request,
+            Principal principal) {
+        try {
+            requireUser(principal);
+            PresignedUploadService service = requirePresignedUploadService();
+            PresignedUploadService.UploadTarget target = service.prepare(
+                    request.originalname(), request.mimetype(), request.size());
+            return ResponseEntity.ok(Map.of("success", true, "upload", target));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(Map.of("success", false, "message", e.getMessage()));
+        } catch (RuntimeException e) {
+            log.error("Presigned 업로드 URL 발급 실패", e);
+            return ResponseEntity.internalServerError()
+                    .body(Map.of("success", false, "message", "업로드 URL 발급에 실패했습니다."));
+        }
+    }
+
+    @PostMapping("/uploads/complete")
+    public ResponseEntity<?> completePresignedUpload(
+            @RequestBody CompleteUploadRequest request,
+            Principal principal) {
+        try {
+            User user = requireUser(principal);
+            File file = requirePresignedUploadService().complete(
+                    request.filename(),
+                    request.originalname(),
+                    request.mimetype(),
+                    request.size(),
+                    user.getId());
+            return ResponseEntity.ok(uploadSuccessResponse(file));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(Map.of("success", false, "message", e.getMessage()));
+        } catch (RuntimeException e) {
+            log.error("Presigned 업로드 확정 실패", e);
+            return ResponseEntity.internalServerError()
+                    .body(Map.of("success", false, "message", "업로드 확인에 실패했습니다."));
+        }
+    }
+
+    private PresignedUploadService requirePresignedUploadService() {
+        PresignedUploadService service = presignedUploadServiceProvider.getIfAvailable();
+        if (service == null) {
+            throw new IllegalStateException("Presigned upload is available only when S3 storage is enabled.");
+        }
+        return service;
+    }
+
+    private User requireUser(Principal principal) {
+        return userRepository.findByEmail(principal.getName())
+                .orElseThrow(() -> new UsernameNotFoundException("User not found: " + principal.getName()));
+    }
+
+    private Map<String, Object> uploadSuccessResponse(File file) {
+        Map<String, Object> fileData = new HashMap<>();
+        fileData.put("_id", file.getId());
+        fileData.put("filename", file.getFilename());
+        fileData.put("originalname", file.getOriginalname());
+        fileData.put("mimetype", file.getMimetype());
+        fileData.put("size", file.getSize());
+        fileData.put("uploadDate", file.getUploadDate());
+
+        Map<String, Object> response = new HashMap<>();
+        response.put("success", true);
+        response.put("message", "파일 업로드 성공");
+        response.put("file", fileData);
+        return response;
     }
 
     /**
