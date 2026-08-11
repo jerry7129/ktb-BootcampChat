@@ -125,6 +125,7 @@ export const useChatRoomState = () => {
     previousMessagesRef: useRef(new Set()),
     messageProcessingRef: useRef(false),
     initialLoadCompletedRef: useRef(false),
+    roomReadyPromiseRef: useRef(null),
     processedMessageIds: useRef(new Set()),
     loadMoreTimeoutRef: useRef(null),
   };

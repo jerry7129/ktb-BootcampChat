@@ -11,19 +11,20 @@ export const useMessageHandling = (
   loadingMessages = false,
   setLoadingMessages,
   socketRef,
+  roomReadyPromiseRef,
 ) => {
- const {
-   filePreview,
-   uploading,
-   uploadProgress,
-   uploadError,
-   setFilePreview,
-   setUploading,
-   setUploadProgress,
-   setUploadError,
-   resetFileUpload,
-   uploadChatFile
- } = useChatFileUpload();
+  const {
+    filePreview,
+    uploading,
+    uploadProgress,
+    uploadError,
+    setFilePreview,
+    setUploading,
+    setUploadProgress,
+    setUploadError,
+    resetFileUpload,
+    uploadChatFile
+  } = useChatFileUpload();
 
   const getRoomSocket = useCallback(() => socketRef?.current ?? null, [socketRef]);
 
@@ -34,6 +35,13 @@ export const useMessageHandling = (
 
     return socketClient.canSend();
   }, [getRoomSocket, socketRef]);
+
+  const waitForRoomReady = useCallback(async () => {
+    const roomReadyPromise = roomReadyPromiseRef?.current;
+    if (roomReadyPromise) {
+      await roomReadyPromise;
+    }
+  }, [roomReadyPromiseRef]);
 
   const handleLoadMore = useCallback(() => {
     if (!canSendOnRoomSocket()) {
@@ -65,73 +73,79 @@ export const useMessageHandling = (
     }, getRoomSocket());
   }, [roomId, loadingMessages, messages, setLoadingMessages, canSendOnRoomSocket, getRoomSocket]);
 
- const handleMessageSubmit = useCallback(async (messageData) => {
-   const roomSocket = getRoomSocket();
-   if (!canSendOnRoomSocket() || !currentUser) {
-     Toast.error('채팅 서버와 연결이 끊어졌습니다.');
-     return;
-   }
+  const handleMessageSubmit = useCallback(async (messageData) => {
+    if (!canSendOnRoomSocket() || !currentUser) {
+      Toast.error('채팅 서버와 연결이 끊어졌습니다.');
+      return;
+    }
 
-   if (!roomId) {
-     Toast.error('채팅방 정보를 찾을 수 없습니다.');
-     return;
-   }
+    if (!roomId) {
+      Toast.error('채팅방 정보를 찾을 수 없습니다.');
+      return;
+    }
 
-   try {
+    try {
+      await waitForRoomReady();
+
+      const roomSocket = getRoomSocket();
+      if (!roomSocket?.connected) {
+        throw new Error('채팅 서버와 연결이 끊어졌습니다.');
+      }
+
       if (messageData.type === 'file') {
         const uploadResponse = await uploadChatFile(
           messageData.fileData.file,
           currentUser
         );
 
-       await socketClient.sendChatMessageAndWait({
-         room: roomId,
-         type: 'file',
-         content: messageData.content || '',
-         fileData: {
-           _id: uploadResponse.data.file._id,
-           filename: uploadResponse.data.file.filename,
-           originalname: uploadResponse.data.file.originalname,
-           mimetype: uploadResponse.data.file.mimetype,
-           size: uploadResponse.data.file.size
-         }
-       }, roomSocket);
+        await socketClient.sendChatMessageAndWait({
+          room: roomId,
+          type: 'file',
+          content: messageData.content || '',
+          fileData: {
+            _id: uploadResponse.data.file._id,
+            filename: uploadResponse.data.file.filename,
+            originalname: uploadResponse.data.file.originalname,
+            mimetype: uploadResponse.data.file.mimetype,
+            size: uploadResponse.data.file.size
+          }
+        }, roomSocket);
 
-       resetFileUpload();
+        resetFileUpload();
 
-     } else if (messageData.content?.trim()) {
-       await socketClient.sendChatMessageAndWait({
-         room: roomId,
-         type: 'text',
-         content: messageData.content.trim()
-       }, roomSocket);
-     }
+      } else if (messageData.content?.trim()) {
+        await socketClient.sendChatMessageAndWait({
+          room: roomId,
+          type: 'text',
+          content: messageData.content.trim()
+        }, roomSocket);
+      }
 
-   } catch (error) {
-     if (error.message?.includes('세션') ||
-         error.message?.includes('인증') ||
-         error.message?.includes('토큰')) {
-       await handleSessionError();
-       return;
-     }
+    } catch (error) {
+      if (error.message?.includes('세션') ||
+          error.message?.includes('인증') ||
+          error.message?.includes('토큰')) {
+        await handleSessionError();
+        return;
+      }
 
-     // 서버가 거부한 메시지는 onError 핸들러가 이미 토스트로 알렸다.
-     // 여기서 또 띄우면 같은 사유의 토스트가 두 개 뜬다.
-     if (error?.code !== 'MESSAGE_REJECTED') {
-       Toast.error(error.message || '메시지 전송 중 오류가 발생했습니다.');
-     }
-     if (messageData.type === 'file') {
-       setUploadError(error.message);
-       setUploading(false);
-     }
-   }
- }, [currentUser, roomId, handleSessionError, uploadChatFile, resetFileUpload, setUploadError, setUploading, canSendOnRoomSocket, getRoomSocket]);
+      // 서버가 거부한 메시지는 onError 핸들러가 이미 토스트로 알렸다.
+      // 여기서 또 띄우면 같은 사유의 토스트가 두 개 뜬다.
+      if (error?.code !== 'MESSAGE_REJECTED') {
+        Toast.error(error.message || '메시지 전송 중 오류가 발생했습니다.');
+      }
+      if (messageData.type === 'file') {
+        setUploadError(error.message);
+        setUploading(false);
+      }
+    }
+  }, [currentUser, roomId, handleSessionError, uploadChatFile, resetFileUpload, setUploadError, setUploading, canSendOnRoomSocket, getRoomSocket, waitForRoomReady]);
 
- const removeFilePreview = useCallback(() => {
-   resetFileUpload();
- }, [resetFileUpload]);
+  const removeFilePreview = useCallback(() => {
+    resetFileUpload();
+  }, [resetFileUpload]);
 
- return {
+  return {
    filePreview,
    uploading,
    uploadProgress,

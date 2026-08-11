@@ -35,6 +35,7 @@ export const useChatRoom = ({ roomId, onNavigate, onReplace, asPath }) => {
     messageProcessingRef,
     processedMessageIds,
     loadMoreTimeoutRef,
+    roomReadyPromiseRef,
   } = refs;
 
   const {
@@ -67,7 +68,16 @@ export const useChatRoom = ({ roomId, onNavigate, onReplace, asPath }) => {
     handleMessageSubmit,
     handleLoadMore,
     removeFilePreview,
-  } = useMessageHandling(currentUser, roomId, undefined, messages, loadingMessages, setLoadingMessages, socketRef);
+  } = useMessageHandling(
+    currentUser,
+    roomId,
+    undefined,
+    messages,
+    loadingMessages,
+    setLoadingMessages,
+    socketRef,
+    roomReadyPromiseRef
+  );
 
   // Cleanup 함수 수정
   const cleanup = useCallback((reason = 'MANUAL') => {

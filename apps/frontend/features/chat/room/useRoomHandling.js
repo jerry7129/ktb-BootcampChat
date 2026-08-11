@@ -29,6 +29,7 @@ export const useRoomHandling = ({
     processedMessageIds,
     messageProcessingRef,
     initialLoadCompletedRef,
+    roomReadyPromiseRef,
   } = refs;
   const {
     setRoom,
@@ -43,6 +44,8 @@ export const useRoomHandling = ({
   const { user, refreshToken, logout } = useAuth();
   const setupPromiseRef = useRef(null);
   const roomEventsUnsubscribeRef = useRef(null);
+  const fallbackRoomReadyPromiseRef = useRef(null);
+  const effectiveRoomReadyPromiseRef = roomReadyPromiseRef || fallbackRoomReadyPromiseRef;
   const MAX_SOCKET_RECONNECT_ATTEMPTS = 3;
   const MAX_MESSAGE_RETRY_ATTEMPTS = 3;
   const MESSAGE_TIMEOUT = 5000;
@@ -333,6 +336,7 @@ export const useRoomHandling = ({
     setupPromiseRef.current = (async () => {
       try {
         initializingRef.current = true;
+        effectiveRoomReadyPromiseRef.current = null;
         setupStarted();
         // 1. Socket Setup
         attachSocket(await setupSocket());
@@ -364,20 +368,28 @@ export const useRoomHandling = ({
           setupEventListeners();
         }
 
-        // 4. Join Room and Load Messages
-        if (mountedRef.current && socketRef.current?.connected) {
-          const joinResult = await joinRoom(roomId);
+        const roomReadyPromise = (async () => {
+          // 4. Join Room and Load Messages
+          if (mountedRef.current && socketRef.current?.connected) {
+            const joinResult = await joinRoom(roomId);
 
-          if (Array.isArray(joinResult?.messages)) {
-            processMessages(joinResult.messages, joinResult.hasMore, true);
-          } else {
-            await loadInitialMessages(roomId);
+            if (Array.isArray(joinResult?.messages)) {
+              processMessages(joinResult.messages, joinResult.hasMore, true);
+            } else {
+              await loadInitialMessages(roomId);
+            }
           }
+        })();
+        effectiveRoomReadyPromiseRef.current = roomReadyPromise;
+
+        if (mountedRef.current) {
+          setupSucceeded(roomData);
         }
+
+        await roomReadyPromise;
 
         if (mountedRef.current) {
           setupCompleteRef.current = true;
-          setupSucceeded(roomData);
         }
       } catch (error) {
         if (mountedRef.current) {
@@ -423,11 +435,13 @@ export const useRoomHandling = ({
     currentUser,
     initializingRef,
     setupCompleteRef,
+    effectiveRoomReadyPromiseRef,
   ]);
 
   useEffect(() => {
     return () => {
       setupPromiseRef.current = null;
+      effectiveRoomReadyPromiseRef.current = null;
       initializingRef.current = false;
       setupCompleteRef.current = false;
 
