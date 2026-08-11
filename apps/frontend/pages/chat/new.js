@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { useRouter } from 'next/router';
 import { ErrorCircleIcon } from '@vapor-ui/icons';
 import {
@@ -41,7 +41,13 @@ function NewChatRoom() {
   const handleSubmit = async (e) => {
     e.preventDefault();
 
-    if (!formData.name.trim()) {
+    // Playwright가 SSR 문서가 보이자마자 입력하면 React hydration 이전의
+    // input 이벤트를 놓칠 수 있다. 제출 시 실제 DOM 값도 읽어 그 경우에도
+    // 사용자가 입력한 방 이름을 잃지 않도록 한다.
+    const roomNameInput = e.currentTarget.elements.namedItem('roomName');
+    const roomName = roomNameInput?.value.trim() || formData.name.trim();
+
+    if (!roomName) {
       setError('채팅방 이름을 입력해주세요.');
       return;
     }
@@ -61,7 +67,7 @@ function NewChatRoom() {
       setError('');
 
       const response = await api.post('/api/rooms', {
-          name: formData.name.trim(),
+          name: roomName,
           password: formData.hasPassword ? formData.password : undefined
       });
 
@@ -118,6 +124,7 @@ function NewChatRoom() {
               </Text>
               <TextInput
                 id="room-name"
+                name="roomName"
                 required
                 size="lg"
                 placeholder="채팅방 이름을 입력하세요"
@@ -171,7 +178,7 @@ function NewChatRoom() {
           <Button
             type="submit"
             size="lg"
-            disabled={loading || !formData.name.trim() || (formData.hasPassword && !formData.password)}
+            disabled={loading || (formData.hasPassword && !formData.password)}
             data-testid="create-chat-room-button"
           >
             {loading ? '생성 중...' : '채팅방 만들기'}
