@@ -83,7 +83,12 @@ public class PresignedUploadService {
             throw new IllegalArgumentException("잘못된 파일명입니다.");
         }
 
-        return fileRepository.findByFilename(filename)
+        long lookupStartedAt = System.nanoTime();
+        var existingFile = fileRepository.findByFilename(filename);
+        log.info("Presigned complete MongoDB 조회: filename={}, elapsedMs={}",
+                filename, elapsedMillis(lookupStartedAt));
+
+        return existingFile
                 .map(existing -> {
                     if (!uploaderId.equals(existing.getUser())) {
                         throw new IllegalArgumentException("이미 등록된 파일입니다.");
@@ -100,10 +105,14 @@ public class PresignedUploadService {
             long size,
             String uploaderId) {
         String key = StorageKey.chat(filename);
+
+        long headStartedAt = System.nanoTime();
         HeadObjectResponse object = s3Client.headObject(HeadObjectRequest.builder()
                 .bucket(bucket)
                 .key(key)
                 .build());
+        log.info("Presigned complete S3 HeadObject: key={}, elapsedMs={}",
+                key, elapsedMillis(headStartedAt));
 
         if (object.contentLength() == null || object.contentLength() != size) {
             throw new IllegalArgumentException("업로드된 파일 크기가 요청과 다릅니다.");
@@ -112,6 +121,7 @@ public class PresignedUploadService {
             throw new IllegalArgumentException("업로드된 파일 형식이 요청과 다릅니다.");
         }
 
+        long saveStartedAt = System.nanoTime();
         File saved = fileRepository.save(File.builder()
                 .filename(filename)
                 .originalname(FileUtil.normalizeOriginalFilename(StringUtils.cleanPath(originalFilename)))
@@ -121,8 +131,14 @@ public class PresignedUploadService {
                 .user(uploaderId)
                 .uploadDate(LocalDateTime.now())
                 .build());
+        log.info("Presigned complete MongoDB 저장: key={}, elapsedMs={}",
+                key, elapsedMillis(saveStartedAt));
         log.info("Presigned S3 파일 업로드 확정: {} (사용자: {})", key, uploaderId);
         return saved;
+    }
+
+    private static long elapsedMillis(long startedAt) {
+        return (System.nanoTime() - startedAt) / 1_000_000;
     }
 
     private void validateMetadata(String originalFilename, String contentType, long size) {

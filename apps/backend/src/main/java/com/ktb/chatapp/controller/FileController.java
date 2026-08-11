@@ -129,6 +129,7 @@ public class FileController {
     public ResponseEntity<?> completePresignedUpload(
             @RequestBody CompleteUploadRequest request,
             Principal principal) {
+        long startedAt = System.nanoTime();
         try {
             User user = requireUser(principal);
             File file = requirePresignedUploadService().complete(
@@ -144,6 +145,10 @@ public class FileController {
             log.error("Presigned 업로드 확정 실패", e);
             return ResponseEntity.internalServerError()
                     .body(Map.of("success", false, "message", "업로드 확인에 실패했습니다."));
+        } finally {
+            long elapsedMs = (System.nanoTime() - startedAt) / 1_000_000;
+            log.info("Presigned complete 전체 처리시간: filename={}, elapsedMs={}",
+                    request.filename(), elapsedMs);
         }
     }
 
