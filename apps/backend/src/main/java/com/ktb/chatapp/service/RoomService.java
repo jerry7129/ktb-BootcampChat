@@ -36,6 +36,7 @@ public class RoomService {
     private final RoomRepository roomRepository;
     private final UserRepository userRepository;
     private final RecentMessageCounter recentMessageCounter;
+    private final RoomParticipantStore roomParticipantStore;
     private final PasswordEncoder passwordEncoder;
     private final ApplicationEventPublisher eventPublisher;
 
@@ -54,7 +55,7 @@ public class RoomService {
                 PageRequest.of(0, roomListMaxSize, Sort.by(Sort.Direction.DESC, "createdAt")));
             List<Room> rooms = roomPage.getContent();
 
-            // 방마다 참가자/생성자를 개별 조회(N+1)하지 않도록 전체 유저 ID를 모아 한 번에 조회한다
+            // 목록 화면에는 참여자 숫자만 필요하므로 참가자 객체는 조회하지 않는다.
             Set<String> userIds = new HashSet<>();
             List<String> roomIds = new java.util.ArrayList<>(rooms.size());
             for (Room room : rooms) {
@@ -62,7 +63,6 @@ public class RoomService {
                 if (room.getCreator() != null) {
                     userIds.add(room.getCreator());
                 }
-                userIds.addAll(room.getParticipantIds());
             }
             Map<String, User> usersById = new HashMap<>();
             if (!userIds.isEmpty()) {
@@ -74,7 +74,7 @@ public class RoomService {
             Map<String, Integer> recentMessageCounts = recentMessageCounter.countRecentMessages(roomIds);
 
             List<RoomResponse> roomResponses = rooms.stream()
-                .map(room -> mapToRoomResponse(room, name, usersById,
+                .map(room -> mapToRoomListResponse(room, name, usersById,
                     recentMessageCounts.getOrDefault(room.getId(), 0)))
                 .sorted(Comparator.comparing(
                     RoomResponse::getCreatedAtDateTime,
@@ -167,6 +167,7 @@ public class RoomService {
         }
 
         Room savedRoom = roomRepository.save(room);
+        roomParticipantStore.add(savedRoom.getId(), creator.getId());
         
         // Publish event for room created
         try {
@@ -206,6 +207,7 @@ public class RoomService {
             // 발생할 수 있다. $addToSet으로 참가자 한 명만 원자적으로 추가한다.
             roomRepository.addParticipant(roomId, user.getId());
             room.addParticipant(user.getId());
+            roomParticipantStore.add(roomId, user.getId());
         }
 
         // HTTP 응답과 roomUpdated 이벤트가 같은 DTO를 사용하도록 한 번만 조회/변환한다.
@@ -263,6 +265,24 @@ public class RoomService {
                     .email(p.getEmail() != null ? p.getEmail() : "")
                     .build())
                 .collect(Collectors.toList()))
+            .participantsCount(room.getParticipantIds().size())
+            .createdAtDateTime(room.getCreatedAt())
+            .isCreator(creator != null && creator.getId().equals(name))
+            .recentMessageCount(recentMessageCount)
+            .build();
+    }
+
+    private RoomResponse mapToRoomListResponse(
+            Room room, String name, Map<String, User> usersById, int recentMessageCount) {
+        User creator = room.getCreator() != null ? usersById.get(room.getCreator()) : null;
+        return RoomResponse.builder()
+            .id(room.getId())
+            .name(room.getName() != null ? room.getName() : "제목 없음")
+            .hasPassword(room.isHasPassword())
+            .creator(creator != null ? UserResponse.from(creator) : null)
+            .participants(null)
+            .participantsCount(Math.toIntExact(
+                roomParticipantStore.count(room.getId(), room.getParticipantIds())))
             .createdAtDateTime(room.getCreatedAt())
             .isCreator(creator != null && creator.getId().equals(name))
             .recentMessageCount(recentMessageCount)

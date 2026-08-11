@@ -34,6 +34,8 @@ class RoomServiceTest {
     @Mock
     private RecentMessageCounter recentMessageCounter;
     @Mock
+    private RoomParticipantStore roomParticipantStore;
+    @Mock
     private PasswordEncoder passwordEncoder;
     @Mock
     private ApplicationEventPublisher eventPublisher;
@@ -46,7 +48,8 @@ class RoomServiceTest {
     @BeforeEach
     void setUp() {
         roomService = new RoomService(
-            roomRepository, userRepository, recentMessageCounter, passwordEncoder, eventPublisher);
+            roomRepository, userRepository, recentMessageCounter, roomParticipantStore,
+            passwordEncoder, eventPublisher);
 
         creator = User.builder().id("creator-1").name("creator").email("creator@test.com").build();
         joiner = User.builder().id("user-1").name("joiner").email("joiner@test.com").build();

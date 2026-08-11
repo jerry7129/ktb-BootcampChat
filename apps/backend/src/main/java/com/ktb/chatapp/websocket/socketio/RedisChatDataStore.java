@@ -2,7 +2,6 @@ package com.ktb.chatapp.websocket.socketio;
 
 import java.time.Duration;
 import java.util.Optional;
-import java.util.Set;
 import org.springframework.data.redis.core.RedisTemplate;
 
 /**
@@ -18,6 +17,8 @@ import org.springframework.data.redis.core.RedisTemplate;
 public class RedisChatDataStore implements ChatDataStore {
 
     private static final String KEY_PREFIX = "chatdata:";
+    private static final String CONNECTED_USER_PREFIX = "conn_users:userid:";
+    private static final String CONNECTED_USERS_KEY = "chatdata:connected-users";
     private static final Duration TTL = Duration.ofHours(6);
 
     private final RedisTemplate<String, Object> redisTemplate;
@@ -42,18 +43,22 @@ public class RedisChatDataStore implements ChatDataStore {
     @Override
     public void set(String key, Object value) {
         redisTemplate.opsForValue().set(key(key), value, TTL);
+        if (key.startsWith(CONNECTED_USER_PREFIX)) {
+            redisTemplate.opsForSet().add(CONNECTED_USERS_KEY, key);
+        }
     }
 
     @Override
     public void delete(String key) {
         redisTemplate.delete(key(key));
+        if (key.startsWith(CONNECTED_USER_PREFIX)) {
+            redisTemplate.opsForSet().remove(CONNECTED_USERS_KEY, key);
+        }
     }
 
     @Override
     public int size() {
-        // logging-only metric (see ConnectionLoginHandler) — KEYS is fine at
-        // this scale but would need SCAN if the key space grows much larger.
-        Set<String> keys = redisTemplate.keys(KEY_PREFIX + "*");
-        return keys != null ? keys.size() : 0;
+        Long count = redisTemplate.opsForSet().size(CONNECTED_USERS_KEY);
+        return count != null ? Math.toIntExact(count) : 0;
     }
 }
