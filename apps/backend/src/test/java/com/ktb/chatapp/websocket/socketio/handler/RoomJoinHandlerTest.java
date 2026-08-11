@@ -3,8 +3,6 @@ package com.ktb.chatapp.websocket.socketio.handler;
 import com.corundumstudio.socketio.BroadcastOperations;
 import com.corundumstudio.socketio.SocketIOClient;
 import com.corundumstudio.socketio.SocketIOServer;
-import com.ktb.chatapp.dto.FetchMessagesRequest;
-import com.ktb.chatapp.dto.FetchMessagesResponse;
 import com.ktb.chatapp.dto.MessageResponse;
 import com.ktb.chatapp.dto.ParticipantUpdateResponse;
 import com.ktb.chatapp.model.Message;
@@ -17,7 +15,6 @@ import com.ktb.chatapp.repository.UserRepository;
 import com.ktb.chatapp.websocket.socketio.SocketUser;
 import com.ktb.chatapp.websocket.socketio.UserRooms;
 import java.time.LocalDateTime;
-import java.util.List;
 import java.util.HashSet;
 import java.util.Optional;
 import java.util.Set;
@@ -45,7 +42,6 @@ class RoomJoinHandlerTest {
     @Mock private RoomRepository roomRepository;
     @Mock private UserRepository userRepository;
     @Mock private UserRooms userRooms;
-    @Mock private MessageLoader messageLoader;
     @Mock private MessageResponseMapper messageResponseMapper;
     @Mock private RoomLeaveHandler roomLeaveHandler;
     @Mock private SocketIOClient client;
@@ -61,7 +57,6 @@ class RoomJoinHandlerTest {
                 roomRepository,
                 userRepository,
                 userRooms,
-                messageLoader,
                 messageResponseMapper,
                 roomLeaveHandler);
     }
@@ -88,11 +83,6 @@ class RoomJoinHandlerTest {
                 .type(MessageType.system)
                 .timestamp(1L)
                 .build();
-        FetchMessagesResponse loadResponse = FetchMessagesResponse.builder()
-                .messages(List.of())
-                .hasMore(false)
-                .build();
-
         when(client.get("user")).thenReturn(socketUser);
         when(userRepository.findById("user-1")).thenReturn(Optional.of(user));
         when(roomRepository.findById("room-1")).thenReturn(Optional.of(room));
@@ -103,8 +93,6 @@ class RoomJoinHandlerTest {
             message.setTimestamp(LocalDateTime.now());
             return message;
         });
-        when(messageLoader.loadMessages(any(FetchMessagesRequest.class), eq("user-1")))
-                .thenReturn(loadResponse);
         when(messageResponseMapper.mapToMessageResponse(any(Message.class), eq(null)))
                 .thenReturn(joinMessageResponse);
         when(socketIOServer.getRoomOperations("room-1")).thenReturn(roomOperations);
