@@ -376,7 +376,16 @@ export const useRoomHandling = ({
             if (Array.isArray(joinResult?.messages)) {
               processMessages(joinResult.messages, joinResult.hasMore, true);
             } else {
-              await loadInitialMessages(roomId);
+              setLoadingMessages(true);
+              void loadInitialMessages(roomId)
+                .catch((error) => {
+                  console.error('Initial message load failed:', error);
+                })
+                .finally(() => {
+                  if (mountedRef.current) {
+                    setLoadingMessages(false);
+                  }
+                });
             }
           }
         })();
@@ -433,6 +442,7 @@ export const useRoomHandling = ({
     setupSucceeded,
     setupFailed,
     currentUser,
+    setLoadingMessages,
     initializingRef,
     setupCompleteRef,
     effectiveRoomReadyPromiseRef,

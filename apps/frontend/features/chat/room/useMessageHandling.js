@@ -85,18 +85,18 @@ export const useMessageHandling = (
     }
 
     try {
-      await waitForRoomReady();
-
-      const roomSocket = getRoomSocket();
-      if (!roomSocket?.connected) {
-        throw new Error('채팅 서버와 연결이 끊어졌습니다.');
-      }
-
       if (messageData.type === 'file') {
         const uploadResponse = await uploadChatFile(
           messageData.fileData.file,
           currentUser
         );
+
+        await waitForRoomReady();
+
+        const roomSocket = getRoomSocket();
+        if (!roomSocket?.connected) {
+          throw new Error('채팅 서버와 연결이 끊어졌습니다.');
+        }
 
         await socketClient.sendChatMessageAndWait({
           room: roomId,
@@ -114,6 +114,13 @@ export const useMessageHandling = (
         resetFileUpload();
 
       } else if (messageData.content?.trim()) {
+        await waitForRoomReady();
+
+        const roomSocket = getRoomSocket();
+        if (!roomSocket?.connected) {
+          throw new Error('채팅 서버와 연결이 끊어졌습니다.');
+        }
+
         await socketClient.sendChatMessageAndWait({
           room: roomId,
           type: 'text',

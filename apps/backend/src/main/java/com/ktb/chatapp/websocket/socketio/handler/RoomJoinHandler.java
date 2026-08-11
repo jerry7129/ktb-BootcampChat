@@ -3,8 +3,6 @@ package com.ktb.chatapp.websocket.socketio.handler;
 import com.corundumstudio.socketio.SocketIOClient;
 import com.corundumstudio.socketio.SocketIOServer;
 import com.corundumstudio.socketio.annotation.OnEvent;
-import com.ktb.chatapp.dto.FetchMessagesRequest;
-import com.ktb.chatapp.dto.FetchMessagesResponse;
 import com.ktb.chatapp.dto.JoinRoomSuccessResponse;
 import com.ktb.chatapp.dto.ParticipantUpdateResponse;
 import com.ktb.chatapp.dto.UserResponse;
@@ -40,7 +38,6 @@ public class RoomJoinHandler {
     private final RoomRepository roomRepository;
     private final UserRepository userRepository;
     private final UserRooms userRooms;
-    private final MessageLoader messageLoader;
     private final MessageResponseMapper messageResponseMapper;
     private final RoomLeaveHandler roomLeaveHandler;
     
@@ -77,15 +74,9 @@ public class RoomJoinHandler {
             client.joinRoom(roomId);
             userRooms.add(userId, roomId);
 
-            // 초기 메시지 로드
-            FetchMessagesRequest req = new FetchMessagesRequest(roomId, 30, null);
-            FetchMessagesResponse messageLoadResult = messageLoader.loadMessages(req, userId);
-
             JoinRoomSuccessResponse response = JoinRoomSuccessResponse.builder()
                 .roomId(roomId)
                 .participants(Collections.emptyList())
-                .messages(messageLoadResult.getMessages())
-                .hasMore(messageLoadResult.isHasMore())
                 .activeStreams(Collections.emptyList())
                 .build();
 
@@ -93,8 +84,7 @@ public class RoomJoinHandler {
 
             publishJoinSideEffects(roomId, userId, userName, room.getParticipantIds().size());
 
-            log.info("User {} joined room {} successfully. Message count: {}, hasMore: {}",
-                userName, roomId, messageLoadResult.getMessages().size(), messageLoadResult.isHasMore());
+            log.info("User {} joined room {} successfully", userName, roomId);
 
         } catch (Exception e) {
             log.error("Error handling joinRoom", e);
