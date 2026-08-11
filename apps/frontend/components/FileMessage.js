@@ -29,7 +29,7 @@ const FileMessage = ({
   const messageDomRef = useRef(null);
   useEffect(() => {
     if (msg?.file) {
-      const url = fileService.getPreviewUrl(msg.file);
+      const url = fileService.getApplicationPreviewUrl(msg.file);
       setPreviewUrl(url);
       console.debug('Preview URL generated:', {
         filename: msg.file.filename,
@@ -137,7 +137,7 @@ const FileMessage = ({
         throw new Error('파일 정보가 없습니다.');
       }
 
-      const fileUrl = fileService.getFileUrl(msg.file.filename, true);
+      const fileUrl = fileService.getApplicationPreviewUrl(msg.file);
       const newWindow = window.open(fileUrl, '_blank');
       if (!newWindow) {
         throw new Error('팝업이 차단되었습니다. 팝업 차단을 해제해주세요.');
@@ -159,7 +159,7 @@ const FileMessage = ({
         );
       }
 
-      const previewUrl = fileService.getPreviewUrl(msg.file);
+      const previewUrl = fileService.getApplicationPreviewUrl(msg.file);
 
       return (
         <div className="bg-transparent-pattern">
