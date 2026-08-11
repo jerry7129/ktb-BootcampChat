@@ -173,7 +173,9 @@ public class ChatMessageHandler {
             // AI 멘션 처리
             aiService.handleAIMentions(roomId, socketUser.id(), messageContent);
 
-            sessionService.updateLastActivity(socketUser.id());
+            // sessionService.updateLastActivity()는 호출하지 않는다 — 메서드 진입 시
+            // validateSession()이 이미 lastActivity를 갱신(Redis read+write)했으므로
+            // 여기서 또 부르면 같은 세션을 메시지 하나당 두 번 읽고 쓰게 된다.
 
             // Record success metrics
             recordMessageSuccess(messageType);

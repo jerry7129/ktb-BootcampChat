@@ -9,6 +9,7 @@ import org.springframework.data.annotation.CreatedDate;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.mongodb.core.index.CompoundIndex;
 import org.springframework.data.mongodb.core.index.CompoundIndexes;
+import org.springframework.data.mongodb.core.index.Indexed;
 import org.springframework.data.mongodb.core.mapping.Document;
 import org.springframework.data.mongodb.core.mapping.Field;
 
@@ -52,8 +53,11 @@ public class Message {
 
     private MessageType type;
 
-    // Mongo 문서 필드명 "file" 사용
+    // Mongo 문서 필드명 "file" 사용. 파일 접근 인가(FileAccessService.authorize)가
+    // findByFileId로 매 요청 조회한다. text 메시지는 대부분 null이라 unique는 걸지 않는다
+    // (unique+non-sparse였다면 null 값이 많아 인덱스 생성 자체가 충돌로 실패했을 것).
     @Field("file")
+    @Indexed
     private String fileId;
 
     private AiType aiType;
