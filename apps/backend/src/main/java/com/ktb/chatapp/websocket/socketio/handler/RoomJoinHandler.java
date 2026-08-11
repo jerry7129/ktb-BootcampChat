@@ -11,7 +11,6 @@ import com.ktb.chatapp.dto.UserResponse;
 import com.ktb.chatapp.model.Message;
 import com.ktb.chatapp.model.MessageType;
 import com.ktb.chatapp.model.Room;
-import com.ktb.chatapp.model.User;
 import com.ktb.chatapp.repository.MessageRepository;
 import com.ktb.chatapp.repository.RoomRepository;
 import com.ktb.chatapp.repository.UserRepository;
@@ -56,18 +55,11 @@ public class RoomJoinHandler {
                 return;
             }
             
-            Optional<User> userOpt = userRepository.findById(userId);
-            if (userOpt.isEmpty()) {
-                client.sendEvent(JOIN_ROOM_ERROR, Map.of("message", "User not found"));
-                return;
-            }
-
             Optional<Room> roomOpt = roomRepository.findById(roomId);
             if (roomOpt.isEmpty()) {
                 client.sendEvent(JOIN_ROOM_ERROR, Map.of("message", "채팅방을 찾을 수 없습니다."));
                 return;
             }
-            User user = userOpt.get();
             Room room = roomOpt.get();
             
             // 이미 해당 방에 참여 중인지 확인
@@ -85,32 +77,13 @@ public class RoomJoinHandler {
             client.joinRoom(roomId);
             userRooms.add(userId, roomId);
 
-            Message joinMessage = Message.builder()
-                .roomId(roomId)
-                .content(userName + "님이 입장하였습니다.")
-                .type(MessageType.system)
-                .timestamp(LocalDateTime.now())
-                .mentions(new ArrayList<>())
-                .reactions(new HashMap<>())
-                .readers(new ArrayList<>())
-                .metadata(new HashMap<>())
-                .build();
-
-            joinMessage = messageRepository.save(joinMessage);
-
             // 초기 메시지 로드
             FetchMessagesRequest req = new FetchMessagesRequest(roomId, 30, null);
             FetchMessagesResponse messageLoadResult = messageLoader.loadMessages(req, userId);
 
-            // 참가자 정보 조회 (개별 findById 대신 배치 조회로 N+1 방지)
-            List<UserResponse> participants = userRepository.findAllById(room.getParticipantIds())
-                    .stream()
-                    .map(UserResponse::from)
-                    .toList();
-            
             JoinRoomSuccessResponse response = JoinRoomSuccessResponse.builder()
                 .roomId(roomId)
-                .participants(participants)
+                .participants(Collections.emptyList())
                 .messages(messageLoadResult.getMessages())
                 .hasMore(messageLoadResult.isHasMore())
                 .activeStreams(Collections.emptyList())
@@ -118,14 +91,7 @@ public class RoomJoinHandler {
 
             client.sendEvent(JOIN_ROOM_SUCCESS, response);
 
-            // 입장 메시지 브로드캐스트
-            socketIOServer.getRoomOperations(roomId)
-                .sendEvent(MESSAGE, messageResponseMapper.mapToMessageResponse(joinMessage, null));
-
-            // 전체 목록 대신 새 참가자 한 명만 브로드캐스트한다.
-            socketIOServer.getRoomOperations(roomId)
-                .sendEvent(PARTICIPANTS_UPDATE, ParticipantUpdateResponse.joined(
-                    UserResponse.from(user), room.getParticipantIds().size()));
+            publishJoinSideEffects(roomId, userId, userName, room.getParticipantIds().size());
 
             log.info("User {} joined room {} successfully. Message count: {}, hasMore: {}",
                 userName, roomId, messageLoadResult.getMessages().size(), messageLoadResult.isHasMore());
@@ -150,5 +116,33 @@ public class RoomJoinHandler {
     private String getUserName(SocketIOClient client) {
         SocketUser user = getUser(client);
         return user != null ? user.name() : null;
+    }
+
+    private void publishJoinSideEffects(String roomId, String userId, String userName, int participantCount) {
+        try {
+            Message joinMessage = Message.builder()
+                .roomId(roomId)
+                .content(userName + "님이 입장하였습니다.")
+                .type(MessageType.system)
+                .timestamp(LocalDateTime.now())
+                .mentions(new ArrayList<>())
+                .reactions(new HashMap<>())
+                .readers(new ArrayList<>())
+                .metadata(new HashMap<>())
+                .build();
+
+            Message savedJoinMessage = messageRepository.save(joinMessage);
+
+            socketIOServer.getRoomOperations(roomId)
+                .sendEvent(MESSAGE, messageResponseMapper.mapToMessageResponse(savedJoinMessage, null));
+
+            userRepository.findById(userId).ifPresent(user ->
+                socketIOServer.getRoomOperations(roomId)
+                    .sendEvent(PARTICIPANTS_UPDATE, ParticipantUpdateResponse.joined(
+                        UserResponse.from(user), participantCount))
+            );
+        } catch (Exception e) {
+            log.warn("Join side effects failed. roomId={}, userId={}", roomId, userId, e);
+        }
     }
 }
