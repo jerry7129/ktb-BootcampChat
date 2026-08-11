@@ -30,8 +30,10 @@ const renderRoomsSocket = (socket, overrides = {}) => {
 
 const createSocket = () => ({
   on: vi.fn(),
+  off: vi.fn(),
   emit: vi.fn(),
   disconnect: vi.fn(),
+  connected: false,
 });
 
 const handlerFor = (socket, event) =>
@@ -45,6 +47,7 @@ describe('useRoomsSocket', () => {
   it('does not emit joinRoomList because the server joins room-list on connect', async () => {
     const socket = {
       on: vi.fn(),
+      off: vi.fn(),
       emit: vi.fn(),
       disconnect: vi.fn(),
     };
@@ -64,6 +67,7 @@ describe('useRoomsSocket', () => {
   it('does not register roomDeleted without a server-side room delete event', async () => {
     const socket = {
       on: vi.fn(),
+      off: vi.fn(),
       emit: vi.fn(),
       disconnect: vi.fn(),
     };
@@ -76,6 +80,32 @@ describe('useRoomsSocket', () => {
 
     const registeredEvents = socket.on.mock.calls.map(([event]) => event);
     expect(registeredEvents).not.toContain('roomDeleted');
+  });
+
+  it('immediately marks an already-connected shared socket as connected', async () => {
+    const socket = { ...createSocket(), connected: true };
+    const setConnectionStatus = vi.fn();
+
+    renderRoomsSocket(socket, { setConnectionStatus });
+
+    await waitFor(() => {
+      expect(setConnectionStatus).toHaveBeenCalledWith('connected');
+    });
+  });
+
+  it('waits for the connect event when a new socket is not connected yet', async () => {
+    const socket = createSocket();
+    const setConnectionStatus = vi.fn();
+
+    renderRoomsSocket(socket, { setConnectionStatus });
+
+    await waitFor(() => {
+      expect(socket.on).toHaveBeenCalledWith('connect', expect.any(Function));
+    });
+    expect(setConnectionStatus).not.toHaveBeenCalledWith('connected');
+
+    handlerFor(socket, 'connect')();
+    expect(setConnectionStatus).toHaveBeenCalledWith('connected');
   });
 
   it('merges a roomActivity update into the matching room without dropping its other fields', async () => {
@@ -116,5 +146,22 @@ describe('useRoomsSocket', () => {
     handlerFor(socket, 'roomActivity')(undefined);
 
     expect(setRooms).not.toHaveBeenCalled();
+  });
+
+  it('removes only list listeners and keeps the shared socket connected on unmount', async () => {
+    const socket = createSocket();
+    const { unmount } = renderRoomsSocket(socket);
+
+    await waitFor(() => {
+      expect(socket.on).toHaveBeenCalledWith('roomActivity', expect.any(Function));
+    });
+
+    const subscriptions = [...socket.on.mock.calls];
+    unmount();
+
+    for (const [event, handler] of subscriptions) {
+      expect(socket.off).toHaveBeenCalledWith(event, handler);
+    }
+    expect(socket.disconnect).not.toHaveBeenCalled();
   });
 });

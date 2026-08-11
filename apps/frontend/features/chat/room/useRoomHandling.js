@@ -436,12 +436,9 @@ export const useRoomHandling = ({
         roomEventsUnsubscribeRef.current = null;
       }
 
-      // 언마운트 경로는 attachSocket 을 쓰지 않는다. 사라지는 컴포넌트에
-       // 소켓 교체를 통지할 구독자가 없다.
-      if (socketRef.current) {
-        socketRef.current.disconnect();
-        socketRef.current = null;
-      }
+      // 화면 전환에서는 이 방의 구독만 정리하고 인증 세션의 공유 연결은
+      // 유지한다. 실제 연결 종료는 로그아웃/오프라인 시 SocketService가 맡는다.
+      socketRef.current = null;
     };
   }, []);
 

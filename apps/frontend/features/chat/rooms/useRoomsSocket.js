@@ -18,6 +18,8 @@ export const useRoomsSocket = ({
     if (!currentUser?.token) return;
 
     let isSubscribed = true;
+    let subscribedSocket = null;
+    let subscribedHandlers = null;
 
     const connectSocket = async () => {
       try {
@@ -36,6 +38,7 @@ export const useRoomsSocket = ({
         if (!isSubscribed || !socket) return;
 
         socketRef.current = socket;
+        subscribedSocket = socket;
 
         const handlers = {
           connect: () => {
@@ -74,6 +77,13 @@ export const useRoomsSocket = ({
         Object.entries(handlers).forEach(([event, handler]) => {
           socket.on(event, handler);
         });
+        subscribedHandlers = handlers;
+
+        // 공유 소켓을 재사용하면 connect 이벤트는 이미 발생한 뒤다. 이벤트만
+        // 기다리면 목록 화면이 checking 상태에 머물 수 있으므로 즉시 동기화한다.
+        if (socket.connected) {
+          setConnectionStatus(CONNECTION_STATUS.CONNECTED);
+        }
       } catch (error) {
         if (!isSubscribed) return;
 
@@ -92,10 +102,16 @@ export const useRoomsSocket = ({
 
     return () => {
       isSubscribed = false;
-      if (socketRef.current) {
-        socketRef.current.disconnect();
-        socketRef.current = null;
+
+      if (subscribedSocket && subscribedHandlers) {
+        Object.entries(subscribedHandlers).forEach(([event, handler]) => {
+          subscribedSocket.off(event, handler);
+        });
       }
+
+      // SocketService가 인증 세션 동안 연결을 소유한다. 목록 화면을 벗어날 때
+      // 연결까지 끊으면 방 상세 화면이 매번 새 handshake를 해야 한다.
+      socketRef.current = null;
     };
   }, [currentUser]); // eslint-disable-line react-hooks/exhaustive-deps
 
