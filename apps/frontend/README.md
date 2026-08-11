@@ -37,6 +37,7 @@ cp .env.example .env.local
 PORT=3000
 NEXT_PUBLIC_API_URL=http://localhost:5001
 NEXT_PUBLIC_SOCKET_URL=http://localhost:5002
+NEXT_PUBLIC_CLOUDFRONT_URL=https://xxxxxxxxxxxxxx.cloudfront.net
 ```
 
 > `.env.local`은 프로덕션 빌드(`build:production`)에서도 `.env.production`보다
@@ -45,6 +46,7 @@ NEXT_PUBLIC_SOCKET_URL=http://localhost:5002
 **환경 변수 설명:**
 - `NEXT_PUBLIC_API_URL`: 백엔드 REST API 서버 주소
 - `NEXT_PUBLIC_SOCKET_URL`: Socket.IO 서버 주소
+- `NEXT_PUBLIC_CLOUDFRONT_URL`: S3 파일 조회에 사용할 CloudFront 배포 주소
 
 서버환경에서 실행시 Route 53 에 등록한 도메인을 입력하세요. 예: `https://chat.goorm-ktb-[번호].goorm.team`
 

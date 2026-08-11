@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback, forwardRef } from 'react';
 import { Avatar } from '@vapor-ui/core';
 import { generateColorFromEmail, getContrastTextColor } from '@/utils/colorUtils';
 import { loadStoredUser } from '@/lib/auth/authStorage';
+import { getCloudFrontFileUrl } from '@/utils/fileUrl';
 
 /**
  * CustomAvatar 컴포넌트
@@ -48,8 +49,7 @@ const CustomAvatar = forwardRef(({
     if (imagePath.startsWith('http')) {
       return imagePath;
     }
-    // API URL과 결합 필요한 경우
-    return `${process.env.NEXT_PUBLIC_API_URL}${imagePath}`;
+    return getCloudFrontFileUrl(imagePath, 'profiles');
   }, [src]);
 
   // persistent 모드: 프로필 이미지 URL 처리

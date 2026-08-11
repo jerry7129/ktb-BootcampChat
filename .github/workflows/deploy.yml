@@ -183,14 +183,15 @@ jobs:
         env:
           API_URL: ${{ vars.FRONTEND_API_URL }}
           SOCKET_URL: ${{ vars.FRONTEND_SOCKET_URL }}
+          CLOUDFRONT_URL: ${{ vars.FRONTEND_CLOUDFRONT_URL || 'https://d2nsun7j7a460i.cloudfront.net' }}
         run: |
           set -euo pipefail
           : "${API_URL:?Repository variable FRONTEND_API_URL is required}"
           : "${SOCKET_URL:?Repository variable FRONTEND_SOCKET_URL is required}"
 
           rm -f apps/frontend/.env.local
-          printf 'NEXT_PUBLIC_API_URL=%s\nNEXT_PUBLIC_SOCKET_URL=%s\n' \
-            "$API_URL" "$SOCKET_URL" > apps/frontend/.env.production
+          printf 'NEXT_PUBLIC_API_URL=%s\nNEXT_PUBLIC_SOCKET_URL=%s\nNEXT_PUBLIC_CLOUDFRONT_URL=%s\n' \
+            "$API_URL" "$SOCKET_URL" "$CLOUDFRONT_URL" > apps/frontend/.env.production
 
       - name: Build standalone frontend
         run: pnpm --dir apps/frontend run build:production
