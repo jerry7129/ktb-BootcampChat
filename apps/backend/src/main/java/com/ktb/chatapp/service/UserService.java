@@ -95,28 +95,67 @@ public class UserService {
      * 프로필 이미지 업로드 (보안 강화)
      * @param email 사용자 이메일
      */
-    public ProfileImageResponse uploadProfileImage(String email, MultipartFile file) {
-        // 사용자 조회
-        User user = userRepository.findByEmail(email.toLowerCase())
-                .orElseThrow(() -> new UsernameNotFoundException("사용자를 찾을 수 없습니다."));
-
-        // 파일 유효성 검증
+    public ProfileImageResponse uploadProfileImage(
+            String email,
+            MultipartFile file
+    ) {
+        // DB나 스토리지 작업 전에 잘못된 파일을 먼저 거부
         validateProfileImageFile(file);
 
-        // 기존 프로필 이미지 삭제
-        if (user.getProfileImage() != null && !user.getProfileImage().isEmpty()) {
-            deleteOldProfileImage(user.getProfileImage());
+        // 새 파일을 먼저 저장한다.
+        String profileImageKey =
+                fileService.storeFile(file, "profiles");
+
+        Query query = Query.query(
+                Criteria.where("email").is(email.toLowerCase())
+        );
+
+        Update update = new Update()
+                .set("profileImage", profileImageKey)
+                .set("updatedAt", LocalDateTime.now());
+
+        // 기존 이미지 key가 필요하므로 변경 전 사용자 문서를 반환받는다.
+        FindAndModifyOptions options =
+                FindAndModifyOptions.options().returnNew(false);
+
+        User previousUser;
+
+        try {
+            previousUser = mongoOperations.findAndModify(
+                    query,
+                    update,
+                    options,
+                    User.class
+            );
+        } catch (RuntimeException e) {
+            // DB 변경 실패 시 방금 저장한 새 파일을 정리한다.
+            deleteProfileImageFile(profileImageKey);
+            throw e;
         }
 
-        // 새 파일 저장 (보안 검증 포함)
-        String profileImageKey = fileService.storeFile(file, "profiles");
+        if (previousUser == null) {
+            // 사용자가 없으면 새 파일을 남기지 않는다.
+            deleteProfileImageFile(profileImageKey);
+            throw new UsernameNotFoundException(
+                    "사용자를 찾을 수 없습니다."
+            );
+        }
 
-        // DB에는 key만 저장한다 — URL은 응답 경계에서 조립된다
-        user.setProfileImage(profileImageKey);
-        user.setUpdatedAt(LocalDateTime.now());
-        userRepository.save(user);
+        String oldProfileImageKey =
+                previousUser.getProfileImage();
 
-        log.info("프로필 이미지 업로드 완료 - User ID: {}, Key: {}", user.getId(), profileImageKey);
+        // DB가 새 파일을 가리키도록 변경된 후 기존 파일을 삭제한다.
+        if (oldProfileImageKey != null
+                && !oldProfileImageKey.isEmpty()
+                && !oldProfileImageKey.equals(profileImageKey)) {
+            deleteProfileImageFile(oldProfileImageKey);
+        }
+
+        log.info(
+                "프로필 이미지 업로드 완료 - User ID: {}, Key: {}",
+                previousUser.getId(),
+                profileImageKey
+        );
 
         return ProfileImageResponse.updated(profileImageKey);
     }
@@ -167,12 +206,19 @@ public class UserService {
      * 기존 프로필 이미지 실물 삭제. 저장값이 key이므로 스토리지에 그대로 넘긴다 — 삭제 실패가 프로필 갱신
      * 자체를 막지는 않는다.
      */
-    private void deleteOldProfileImage(String profileImageKey) {
+    private void deleteProfileImageFile(String profileImageKey) {
         try {
             storagePort.delete(profileImageKey);
-            log.info("기존 프로필 이미지 삭제 완료: {}", profileImageKey);
+            log.info(
+                    "프로필 이미지 파일 삭제 완료: {}",
+                    profileImageKey
+            );
         } catch (RuntimeException e) {
-            log.warn("기존 프로필 이미지 삭제 실패: {}", e.getMessage());
+            log.warn(
+                    "프로필 이미지 파일 삭제 실패 - Key: {}, Error: {}",
+                    profileImageKey,
+                    e.getMessage()
+            );
         }
     }
 
@@ -185,7 +231,7 @@ public class UserService {
                 .orElseThrow(() -> new UsernameNotFoundException("사용자를 찾을 수 없습니다."));
 
         if (user.getProfileImage() != null && !user.getProfileImage().isEmpty()) {
-            deleteOldProfileImage(user.getProfileImage());
+            deleteProfileImageFile(user.getProfileImage());
             user.setProfileImage("");
             user.setUpdatedAt(LocalDateTime.now());
             userRepository.save(user);
@@ -202,7 +248,7 @@ public class UserService {
                 .orElseThrow(() -> new UsernameNotFoundException("사용자를 찾을 수 없습니다."));
 
         if (user.getProfileImage() != null && !user.getProfileImage().isEmpty()) {
-            deleteOldProfileImage(user.getProfileImage());
+            deleteProfileImageFile(user.getProfileImage());
         }
 
         userRepository.delete(user);
