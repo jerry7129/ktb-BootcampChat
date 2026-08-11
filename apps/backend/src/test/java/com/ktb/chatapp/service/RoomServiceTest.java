@@ -61,17 +61,17 @@ class RoomServiceTest {
     @Test
     void joinRoom_addsParticipantAtomicallyAndBuildsResponseOnce() {
         when(roomRepository.findById("room-1")).thenReturn(Optional.of(room));
-        when(userRepository.findByEmail(joiner.getEmail())).thenReturn(Optional.of(joiner));
         when(userRepository.findAllById(Set.of(creator.getId(), joiner.getId())))
             .thenReturn(List.of(creator, joiner));
         when(recentMessageCounter.countRecentMessages("room-1")).thenReturn(3);
 
-        RoomResponse response = roomService.joinRoom("room-1", null, joiner.getEmail());
+        RoomResponse response = roomService.joinRoom("room-1", null, joiner.getId());
 
         assertThat(response.getParticipants()).extracting("id")
             .containsExactlyInAnyOrder(creator.getId(), joiner.getId());
         assertThat(response.getRecentMessageCount()).isEqualTo(3);
         verify(roomRepository).addParticipant("room-1", joiner.getId());
+        verify(roomParticipantStore).add("room-1", joiner.getId());
         verify(roomRepository, never()).save(room);
         verify(userRepository).findAllById(Set.of(creator.getId(), joiner.getId()));
         verify(recentMessageCounter).countRecentMessages("room-1");
@@ -82,13 +82,13 @@ class RoomServiceTest {
     void joinRoom_doesNotWriteParticipantAgainWhenAlreadyJoined() {
         room.addParticipant(joiner.getId());
         when(roomRepository.findById("room-1")).thenReturn(Optional.of(room));
-        when(userRepository.findByEmail(joiner.getEmail())).thenReturn(Optional.of(joiner));
         when(userRepository.findAllById(Set.of(creator.getId(), joiner.getId())))
             .thenReturn(List.of(creator, joiner));
 
-        roomService.joinRoom("room-1", null, joiner.getEmail());
+        roomService.joinRoom("room-1", null, joiner.getId());
 
         verify(roomRepository, never()).addParticipant("room-1", joiner.getId());
+        verify(roomParticipantStore, never()).add("room-1", joiner.getId());
         verify(roomRepository, never()).save(room);
     }
 
@@ -97,14 +97,14 @@ class RoomServiceTest {
         room.setHasPassword(true);
         room.setPassword("encoded-password");
         when(roomRepository.findById("room-1")).thenReturn(Optional.of(room));
-        when(userRepository.findByEmail(joiner.getEmail())).thenReturn(Optional.of(joiner));
         when(passwordEncoder.matches("wrong", "encoded-password")).thenReturn(false);
 
-        assertThatThrownBy(() -> roomService.joinRoom("room-1", "wrong", joiner.getEmail()))
+        assertThatThrownBy(() -> roomService.joinRoom("room-1", "wrong", joiner.getId()))
             .isInstanceOf(RuntimeException.class)
             .hasMessageContaining("비밀번호");
 
         verify(roomRepository, never()).addParticipant("room-1", joiner.getId());
+        verify(roomParticipantStore, never()).add("room-1", joiner.getId());
         verify(eventPublisher, never()).publishEvent(org.mockito.ArgumentMatchers.any());
     }
 }

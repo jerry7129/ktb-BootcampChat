@@ -183,39 +183,50 @@ public class RoomService {
         return roomRepository.findById(roomId);
     }
 
-    public RoomResponse joinRoom(String roomId, String password, String name) {
-        Optional<Room> roomOpt = roomRepository.findById(roomId);
-        if (roomOpt.isEmpty()) {
+    public RoomResponse joinRoom(
+            String roomId,
+            String password,
+            String userId
+    ) {
+        Room room = roomRepository.findById(roomId).orElse(null);
+
+        if (room == null) {
             return null;
         }
 
-        Room room = roomOpt.get();
-        User user = userRepository.findByEmail(name)
-            .orElseThrow(() -> new RuntimeException("사용자를 찾을 수 없습니다: " + name));
-
-        // 비밀번호 확인
+        // 참가자 추가 전에 비밀번호를 먼저 검증해야 한다.
         if (room.isHasPassword()) {
-            if (password == null || !passwordEncoder.matches(password, room.getPassword())) {
-                throw new RuntimeException("비밀번호가 일치하지 않습니다.");
+            if (password == null
+                    || !passwordEncoder.matches(password, room.getPassword())) {
+                throw new IllegalArgumentException("비밀번호가 일치하지 않습니다.");
             }
         }
 
-        // 이미 참여중인지 확인
-        if (!room.getParticipantIds().contains(user.getId())) {
-            // 방 문서 전체를 read-modify-save하면 동시 입장 시 갱신 유실과 쓰기 경합이
-            // 발생할 수 있다. $addToSet으로 참가자 한 명만 원자적으로 추가한다.
-            roomRepository.addParticipant(roomId, user.getId());
-            room.addParticipant(user.getId());
+        // JWT에서 받은 userId를 직접 사용한다.
+        if (!room.getParticipantIds().contains(userId)) {
+            // MongoDB와 Redis의 참여자 집합을 같은 ID로 갱신한다.
+            roomRepository.addParticipant(roomId, userId);
+            room.addParticipant(userId);
+            roomParticipantStore.add(roomId, userId);
         }
 
-        // HTTP 응답과 roomUpdated 이벤트가 같은 DTO를 사용하도록 한 번만 조회/변환한다.
-        RoomResponse roomResponse = mapToRoomResponse(room, name);
+        RoomResponse roomResponse =
+                mapToRoomResponse(room, userId);
 
-        // Publish event for room updated
         try {
-            eventPublisher.publishEvent(new RoomUpdatedEvent(this, roomId, roomResponse));
+            eventPublisher.publishEvent(
+                    new RoomUpdatedEvent(
+                            this,
+                            roomId,
+                            roomResponse
+                    )
+            );
         } catch (Exception e) {
-            log.error("roomUpdate 이벤트 발행 실패", e);
+            log.error(
+                    "roomUpdate 이벤트 발행 실패: roomId={}",
+                    roomId,
+                    e
+            );
         }
 
         return roomResponse;

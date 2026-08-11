@@ -57,16 +57,19 @@ export const useRoomList = ({
   }, [isRetrying, setConnectionStatus]);
 
   const loadRooms = useCallback(async () => {
-    await attemptConnection();
+    try {
+      const response = await axiosInstance.get('/api/rooms');
 
-    const response = await axiosInstance.get('/api/rooms');
+      setRooms(response.data.data);
+      setConnectionStatus(CONNECTION_STATUS.CONNECTED);
+    } catch (error) {
+      if (error.status === 401) {
+        throw new Error('AUTH_EXPIRED');
+      }
 
-    if (!response?.data?.data) {
-      throw new Error('INVALID_RESPONSE');
+      throw new Error('SERVER_UNREACHABLE');
     }
-
-    setRooms(response.data.data);
-  }, [attemptConnection]);
+  }, [setConnectionStatus]);
 
   const fetchRooms = useCallback(async () => {
     if (!currentUser?.token || isLoadingRef.current) {

@@ -29,6 +29,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.CacheControl;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
 @Tag(name = "채팅방 (Rooms)", description = "채팅방 생성 및 관리 API - 채팅방 목록 조회, 생성, 참여, 헬스체크")
@@ -230,42 +231,67 @@ public class RoomController {
     })
     @PostMapping("/{roomId}/join")
     public ResponseEntity<?> joinRoom(
-            @Parameter(description = "채팅방 ID", example = "60d5ec49f1b2c8b9e8c4f2a1") @PathVariable String roomId,
-            @RequestBody JoinRoomRequest joinRoomRequest,
-            Principal principal) {
+            @PathVariable String roomId,
+            @RequestBody JoinRoomRequest request,
+            Authentication authentication
+    ) {
         try {
+            String userId = extractUserId(authentication);
+
             RoomResponse roomResponse = roomService.joinRoom(
-                    roomId, joinRoomRequest.getPassword(), principal.getName());
+                    roomId,
+                    request.getPassword(),
+                    userId
+            );
 
             if (roomResponse == null) {
                 return ResponseEntity.status(HttpStatus.NOT_FOUND)
-                        .body(StandardResponse.error("채팅방을 찾을 수 없습니다."));
+                        .body(StandardResponse.error(
+                                "채팅방을 찾을 수 없습니다."
+                        ));
             }
 
-            return ResponseEntity.ok(
-                Map.of(
+            return ResponseEntity.ok(Map.of(
                     "success", true,
-                    "data", roomResponse
-                )
-            );
+                    "roomId", roomId
+            ));
 
-        } catch (RuntimeException e) {
-            // 401은 "로그인 세션이 없다/만료됐다"는 뜻으로 프론트 인터셉터가
-            // 해석해서 강제 로그아웃 + 로그인 화면으로 튕겨버린다. 방 비밀번호가
-            // 틀린 건 로그인 상태랑 무관한 별개의 문제라 400으로 내려야 한다.
-            if (e.getMessage().contains("비밀번호")) {
-                return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-                        .body(StandardResponse.error("비밀번호가 일치하지 않습니다."));
-            }
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest()
                     .body(StandardResponse.error(e.getMessage()));
 
         } catch (Exception e) {
-            log.error("채팅방 참여 에러", e);
-            return ResponseEntity.status(500).body(
-                StandardResponse.error("채팅방 참여에 실패했습니다.")
+            log.error(
+                    "채팅방 참여 에러: roomId={}",
+                    roomId,
+                    e
+            );
+
+            return ResponseEntity.internalServerError()
+                    .body(StandardResponse.error(
+                            "채팅방 참여에 실패했습니다."
+                    ));
+        }
+    }
+
+    private String extractUserId(Authentication authentication) {
+        if (authentication == null
+                || !(authentication.getDetails() instanceof Map<?, ?> details)) {
+            throw new IllegalArgumentException(
+                    "인증 사용자 정보를 찾을 수 없습니다."
             );
         }
+
+        Object userId = details.get("userId");
+
+        if (!(userId instanceof String value)
+                || value.isBlank()) {
+            throw new IllegalArgumentException(
+                    "인증 사용자 ID를 찾을 수 없습니다."
+            );
+        }
+
+        return value;
     }
 
     private RoomResponse mapToRoomResponse(Room room, String name) {
