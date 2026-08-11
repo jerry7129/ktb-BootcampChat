@@ -2,19 +2,20 @@ import { useState, useCallback, useRef } from 'react';
 import axiosInstance from '@/services/axios';
 import { CONNECTION_STATUS } from './useServerConnection';
 
+const navigateTo = (url) => window.location.assign(url);
+
 export const useRoomList = ({
   currentUser,
-  router,
   connectionStatus,
   setConnectionStatus,
   isRetrying,
+  onNavigate = navigateTo,
 }) => {
   const [rooms, setRooms] = useState([]);
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [isInitialLoad, setIsInitialLoad] = useState(true);
-  const [joiningRoom, setJoiningRoom] = useState(false);
 
   const isLoadingRef = useRef(false);
 
@@ -138,13 +139,11 @@ export const useRoomList = ({
       return;
     }
 
-    setJoiningRoom(true);
-
     try {
       const response = await axiosInstance.post(`/api/rooms/${roomId}/join`, {});
 
       if (response.data.success) {
-        router.push(`/chat/${roomId}`);
+        onNavigate(`/chat/${roomId}`);
       }
     } catch (error) {
       let errorMessage = '입장에 실패했습니다.';
@@ -159,10 +158,8 @@ export const useRoomList = ({
         message: error.response?.data?.message || errorMessage,
         type: 'danger',
       });
-    } finally {
-      setJoiningRoom(false);
     }
-  }, [connectionStatus, router]);
+  }, [connectionStatus, onNavigate]);
 
   return {
     rooms,
@@ -171,7 +168,6 @@ export const useRoomList = ({
     setError,
     loading,
     refreshing,
-    joiningRoom,
     fetchRooms,
     refreshRooms,
     handleJoinRoom,

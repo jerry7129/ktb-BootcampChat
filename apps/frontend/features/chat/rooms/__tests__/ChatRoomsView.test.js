@@ -46,7 +46,6 @@ vi.mock('../useRoomList', () => ({
     error: mocks.error,
     loading: false,
     refreshing: false,
-    joiningRoom: false,
     fetchRooms: mocks.fetchRooms,
     refreshRooms: mocks.refreshRooms,
     handleJoinRoom: vi.fn(),

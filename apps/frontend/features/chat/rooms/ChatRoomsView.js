@@ -45,13 +45,11 @@ export default function ChatRoomsView({ router }) {
     error,
     loading,
     refreshing,
-    joiningRoom,
     fetchRooms,
     refreshRooms,
     handleJoinRoom,
   } = useRoomList({
     currentUser,
-    router,
     connectionStatus,
     setConnectionStatus,
     isRetrying,
