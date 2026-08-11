@@ -12,7 +12,6 @@ import com.ktb.chatapp.model.User;
 import com.ktb.chatapp.repository.MessageRepository;
 import com.ktb.chatapp.repository.RoomRepository;
 import com.ktb.chatapp.repository.UserRepository;
-import com.ktb.chatapp.service.RoomParticipantStore;
 import com.ktb.chatapp.websocket.socketio.SocketUser;
 import com.ktb.chatapp.websocket.socketio.UserRooms;
 import java.time.LocalDateTime;
@@ -44,7 +43,6 @@ class RoomLeaveHandlerTest {
     @Mock private RoomRepository roomRepository;
     @Mock private UserRepository userRepository;
     @Mock private UserRooms userRooms;
-    @Mock private RoomParticipantStore roomParticipantStore;
     @Mock private MessageResponseMapper messageResponseMapper;
     @Mock private SocketIOClient client;
     @Mock private BroadcastOperations roomOperations;
@@ -59,7 +57,6 @@ class RoomLeaveHandlerTest {
                 roomRepository,
                 userRepository,
                 userRooms,
-                roomParticipantStore,
                 messageResponseMapper);
     }
 
@@ -117,7 +114,6 @@ class RoomLeaveHandlerTest {
         verify(roomRepository).removeParticipant("room-1", "user-1");
         verify(client).leaveRoom("room-1");
         verify(userRooms).remove("user-1", "room-1");
-        verify(roomParticipantStore).remove("room-1", "user-1");
         verify(roomOperations).sendEvent(MESSAGE, leaveMessageResponse);
         ArgumentCaptor<Object> participantsCaptor = ArgumentCaptor.forClass(Object.class);
         verify(roomOperations).sendEvent(eq(PARTICIPANTS_UPDATE), participantsCaptor.capture());
