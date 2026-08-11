@@ -114,12 +114,9 @@ public class RoomLeaveHandler {
             return;
         }
         
-        var participantList = roomOpt.get()
-                .getParticipantIds()
+        // 개별 findById 대신 배치 조회로 N+1 방지
+        var participantList = userRepository.findAllById(roomOpt.get().getParticipantIds())
                 .stream()
-                .map(userRepository::findById)
-                .filter(Optional::isPresent)
-                .map(Optional::get)
                 .map(UserResponse::from)
                 .toList();
         
