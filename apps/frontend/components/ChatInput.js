@@ -24,8 +24,6 @@ const ChatInput = forwardRef(({
   const emojiButtonRef = useRef(null);
   const dropZoneRef = useRef(null);
   const internalInputRef = useRef(null);
-  const isComposingRef = useRef(false);
-  const compositionResetTimerRef = useRef(null);
   const messageInputRef = ref || internalInputRef;
 
   const {
@@ -77,7 +75,7 @@ const ChatInput = forwardRef(({
         fileInputRef.current.value = '';
       }
     }
-  }, [fileInputRef, onFileSelect]);
+  }, [onFileSelect]);
 
   const handleFileRemove = useCallback((fileToRemove) => {
     setFiles(prev => prev.filter(file => file.name !== fileToRemove.name));
@@ -85,35 +83,6 @@ const ChatInput = forwardRef(({
     setUploadError(null);
     setUploadProgress(0);
   }, []);
-
-  const handleCompositionStart = useCallback(() => {
-    if (compositionResetTimerRef.current) {
-      clearTimeout(compositionResetTimerRef.current);
-      compositionResetTimerRef.current = null;
-    }
-    isComposingRef.current = true;
-  }, []);
-
-  const handleCompositionEnd = useCallback(() => {
-    if (compositionResetTimerRef.current) {
-      clearTimeout(compositionResetTimerRef.current);
-    }
-
-    // 일부 브라우저는 조합 확정 Enter 직후 keydown에서 isComposing=false를 준다.
-    // 같은 tick의 Enter가 전송/멘션 선택으로 새지 않도록 한 박자 늦게 해제한다.
-    compositionResetTimerRef.current = setTimeout(() => {
-      isComposingRef.current = false;
-      compositionResetTimerRef.current = null;
-    }, 0);
-  }, []);
-
-  const isImeComposingEvent = useCallback((e) => (
-    isComposingRef.current ||
-    e.nativeEvent?.isComposing ||
-    e.isComposing ||
-    e.keyCode === 229 ||
-    e.which === 229
-  ), []);
 
   const handleFileDrop = useCallback(async (e) => {
     e.preventDefault();
@@ -214,12 +183,6 @@ const ChatInput = forwardRef(({
     };
   }, [showEmojiPicker, setShowEmojiPicker, files, messageInputRef, handleFileValidationAndPreview]);
 
-  useEffect(() => () => {
-    if (compositionResetTimerRef.current) {
-      clearTimeout(compositionResetTimerRef.current);
-    }
-  }, []);
-
   const calculateMentionPosition = useCallback((textarea, atIndex) => {
     // Get all text before @ symbol
     const textBeforeAt = textarea.value.slice(0, atIndex);
@@ -317,12 +280,6 @@ const ChatInput = forwardRef(({
   }, [insertMention, messageInputRef]);
 
   const handleKeyDown = useCallback((e) => {
-    const isEnter = e.key === 'Enter';
-
-    if (isEnter && isImeComposingEvent(e)) {
-      return;
-    }
-
     if (showMentionList) {
       const participants = getFilteredParticipants(room); // room 객체 전달
       const participantsCount = participants.length;
@@ -358,7 +315,12 @@ const ChatInput = forwardRef(({
         default:
           return;
       }
-    } else if (isEnter && !e.shiftKey) {
+    } else if (e.key === 'Enter' && !e.shiftKey) {
+      // 한글/일본어/중국어 등 IME로 글자를 조합하는 중에 눌린 Enter는 무시한다.
+      // 조합이 끝나기 전에 전송하면 메시지가 쪼개져서 두 번 보내진다.
+      if (e.nativeEvent.isComposing || e.keyCode === 229) {
+        return;
+      }
       e.preventDefault();
       if (message.trim() || files.length > 0) {
         handleSubmit(e);
@@ -375,7 +337,6 @@ const ChatInput = forwardRef(({
     getFilteredParticipants,
     handleMentionSelect,
     handleSubmit,
-    isImeComposingEvent,
     setMentionIndex,
     setShowMentionList,
     setShowEmojiPicker,
@@ -454,8 +415,6 @@ const ChatInput = forwardRef(({
                   value={message}
                   onChange={handleInputChange}
                   onKeyDown={handleKeyDown}
-                  onCompositionStart={handleCompositionStart}
-                  onCompositionEnd={handleCompositionEnd}
                   placeholder={isDragging ? "파일을 여기에 놓아주세요." : "메시지를 입력하세요... (@를 입력하여 멘션, Shift + Enter로 줄바꿈)"}
                   disabled={isDisabled}
                   rows={1}
