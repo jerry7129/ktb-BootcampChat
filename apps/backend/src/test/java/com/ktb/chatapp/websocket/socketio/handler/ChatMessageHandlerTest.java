@@ -7,11 +7,9 @@ import com.ktb.chatapp.dto.ChatMessageRequest;
 import com.ktb.chatapp.dto.MessageResponse;
 import com.ktb.chatapp.model.Message;
 import com.ktb.chatapp.model.MessageType;
-import com.ktb.chatapp.model.Room;
 import com.ktb.chatapp.model.User;
 import com.ktb.chatapp.repository.FileRepository;
 import com.ktb.chatapp.repository.MessageRepository;
-import com.ktb.chatapp.repository.RoomRepository;
 import com.ktb.chatapp.repository.UserRepository;
 import com.ktb.chatapp.service.RateLimitCheckResult;
 import com.ktb.chatapp.service.RateLimitService;
@@ -24,9 +22,9 @@ import com.ktb.chatapp.websocket.socketio.ai.AiService;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.time.LocalDateTime;
-import java.util.HashSet;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -45,7 +43,6 @@ class ChatMessageHandlerTest {
 
     @Mock private SocketIOServer socketIOServer;
     @Mock private MessageRepository messageRepository;
-    @Mock private RoomRepository roomRepository;
     @Mock private UserRepository userRepository;
     @Mock private FileRepository fileRepository;
     @Mock private AiService aiService;
@@ -63,7 +60,6 @@ class ChatMessageHandlerTest {
                 new ChatMessageHandler(
                         socketIOServer,
                         messageRepository,
-                        roomRepository,
                         userRepository,
                         fileRepository,
                         aiService,
@@ -91,11 +87,7 @@ class ChatMessageHandlerTest {
         User user = new User();
         user.setId("user-1");
         when(userRepository.findById("user-1")).thenReturn(Optional.of(user));
-
-        Room room = new Room();
-        room.setId("room-1");
-        room.setParticipantIds(new HashSet<>(java.util.List.of("user-1")));
-        when(roomRepository.findById("room-1")).thenReturn(Optional.of(room));
+        when(client.getAllRooms()).thenReturn(Set.of("room-1"));
 
         ChatMessageRequest request =
                 ChatMessageRequest.builder()
@@ -132,11 +124,7 @@ class ChatMessageHandlerTest {
         user.setId("user-1");
         user.setName("Tester");
         when(userRepository.findById("user-1")).thenReturn(Optional.of(user));
-
-        Room room = new Room();
-        room.setId("room-1");
-        room.setParticipantIds(new HashSet<>(java.util.List.of("user-1")));
-        when(roomRepository.findById("room-1")).thenReturn(Optional.of(room));
+        when(client.getAllRooms()).thenReturn(Set.of("room-1"));
         when(bannedWordChecker.containsBannedWord("hello")).thenReturn(false);
         when(socketIOServer.getRoomOperations("room-1")).thenReturn(roomOperations);
         when(messageRepository.save(any(Message.class))).thenAnswer(invocation -> {
@@ -162,5 +150,34 @@ class ChatMessageHandlerTest {
         verify(roomActivityNotifier).notifyMessageStored("room-1");
         org.junit.jupiter.api.Assertions.assertEquals("message-1", payloadCaptor.getValue().getId());
         org.junit.jupiter.api.Assertions.assertEquals("hello", payloadCaptor.getValue().getContent());
+    }
+
+    @Test
+    void handleChatMessage_rejectsRoomThatTheSocketHasNotJoined() {
+        SocketIOClient client = mock(SocketIOClient.class);
+        SocketUser socketUser = new SocketUser("user-1", "tester", "session-1", "socket-1");
+        when(client.get("user")).thenReturn(socketUser);
+        when(client.getAllRooms()).thenReturn(Set.of("socket-1", "room-list"));
+        when(sessionService.validateSession(socketUser.id(), socketUser.authSessionId()))
+                .thenReturn(SessionValidationResult.valid(null));
+        when(rateLimitService.checkRateLimit(eq(socketUser.id()), anyInt(), any()))
+                .thenReturn(RateLimitCheckResult.allowed(
+                        10000, 9999, 60, System.currentTimeMillis() / 1000 + 60, 60));
+
+        ChatMessageRequest request =
+                ChatMessageRequest.builder()
+                        .room("room-not-joined")
+                        .type("text")
+                        .content("hello")
+                        .build();
+
+        handler.handleChatMessage(client, request);
+
+        ArgumentCaptor<Map<String, String>> payloadCaptor = ArgumentCaptor.forClass(Map.class);
+        verify(client).sendEvent(eq(ERROR), payloadCaptor.capture());
+        org.junit.jupiter.api.Assertions.assertEquals(
+                "채팅방 접근 권한이 없습니다.", payloadCaptor.getValue().get("message"));
+        verifyNoInteractions(userRepository, messageRepository);
+        verify(socketIOServer, never()).getRoomOperations(any());
     }
 }
