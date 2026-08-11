@@ -19,6 +19,10 @@ import static java.net.InetAddress.*;
 public class RateLimitService {
 
     private final RateLimitStore rateLimitStore;
+
+    @Value("${chatapp.rate-limit.enabled:true}")
+    private boolean enabled = true;
+
     @Value("${HOSTNAME:''}")
     private String hostName;
     
@@ -41,11 +45,21 @@ public class RateLimitService {
     
     @Transactional
     public RateLimitCheckResult checkRateLimit(String _clientId, int maxRequests, Duration window) {
-        String actualClientId = hostName + ":" + _clientId;
         Duration effectiveWindow = window != null ? window : Duration.ofSeconds(1);
         long windowSeconds = Math.max(1L, effectiveWindow.getSeconds());
         Instant now = Instant.now();
         long nowEpochSeconds = now.getEpochSecond();
+
+        if (!enabled) {
+            return RateLimitCheckResult.allowed(
+                    maxRequests,
+                    maxRequests,
+                    windowSeconds,
+                    nowEpochSeconds + windowSeconds,
+                    windowSeconds);
+        }
+
+        String actualClientId = hostName + ":" + _clientId;
         Instant expiresAt = now.plusSeconds(windowSeconds);
 
         try {
