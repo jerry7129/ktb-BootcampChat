@@ -70,12 +70,16 @@ describe('ChatRoomsView', () => {
     vi.useRealTimers();
   });
 
-  it('does not refetch rooms when connection status changes after the initial load starts', async () => {
+  it('checks server health before fetching the initial room list', async () => {
     const { rerender } = render(<ChatRoomsView router={{ push: vi.fn() }} />);
 
     await waitFor(() => {
+      expect(mocks.attemptConnection).toHaveBeenCalledTimes(1);
       expect(mocks.fetchRooms).toHaveBeenCalledTimes(1);
     });
+
+    expect(mocks.attemptConnection.mock.invocationCallOrder[0])
+      .toBeLessThan(mocks.fetchRooms.mock.invocationCallOrder[0]);
 
     mocks.connectionStatus = CONNECTION_STATUS.CONNECTED;
     rerender(<ChatRoomsView router={{ push: vi.fn() }} />);
@@ -83,6 +87,18 @@ describe('ChatRoomsView', () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
 
     expect(mocks.fetchRooms).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not fetch rooms when the initial health check fails', async () => {
+    mocks.attemptConnection.mockRejectedValueOnce(new Error('SERVER_UNREACHABLE'));
+
+    render(<ChatRoomsView router={{ push: vi.fn() }} />);
+
+    await waitFor(() => {
+      expect(mocks.attemptConnection).toHaveBeenCalledTimes(1);
+    });
+
+    expect(mocks.fetchRooms).not.toHaveBeenCalled();
   });
 
   it('refreshes the room list on an interval while connected', async () => {
