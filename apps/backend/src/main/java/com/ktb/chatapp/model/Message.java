@@ -7,6 +7,8 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 import org.springframework.data.annotation.CreatedDate;
 import org.springframework.data.annotation.Id;
+import org.springframework.data.mongodb.core.index.CompoundIndex;
+import org.springframework.data.mongodb.core.index.CompoundIndexes;
 import org.springframework.data.mongodb.core.mapping.Document;
 import org.springframework.data.mongodb.core.mapping.Field;
 
@@ -26,6 +28,12 @@ import java.util.Set;
 @NoArgsConstructor
 @AllArgsConstructor
 @Document(collection = "messages")
+@CompoundIndexes({
+    // 방별 메시지 히스토리 페이징(findByRoomIdAndTimestampBefore)과
+    // 최근 메시지 카운트(countRecentMessagesByRoomId) 쿼리가 이 인덱스를 탄다.
+    // 인덱스가 없으면 매 요청마다 messages 컬렉션 풀스캔이 발생한다.
+    @CompoundIndex(name = "room_timestamp_idx", def = "{'room': 1, 'timestamp': -1}")
+})
 public class Message {
 
     @Id

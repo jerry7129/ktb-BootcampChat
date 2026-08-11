@@ -14,6 +14,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -24,7 +25,6 @@ class ConnectionLoginHandlerTest {
     @Mock private ConnectedUsers connectedUsers;
     @Mock private UserRooms userRooms;
     @Mock private RoomJoinHandler roomJoinHandler;
-    @Mock private RoomLeaveHandler roomLeaveHandler;
     @Mock private SocketIOClient client;
 
     private ConnectionLoginHandler handler;
@@ -36,7 +36,6 @@ class ConnectionLoginHandlerTest {
                 connectedUsers,
                 userRooms,
                 roomJoinHandler,
-                roomLeaveHandler,
                 new SimpleMeterRegistry());
     }
 
@@ -57,17 +56,19 @@ class ConnectionLoginHandlerTest {
     }
 
     @Test
-    void onDisconnect_removesCurrentConnectionAndLeavesRooms() {
+    void onDisconnect_removesCurrentConnectionWithoutLeavingRooms() {
+        // 소켓 연결 해제만으로는 방 참가 상태(참가자 목록, 시스템 메시지)를 건드리지 않아야 한다.
+        // 와이파이 순단/탭 백그라운드/배포로 인한 재연결마다 방을 나갔다 재입장하는 것을 막기 위함.
+        // 진짜 나가기는 RoomLeaveHandler의 LEAVE_ROOM 이벤트로만 처리한다.
         UUID socketId = UUID.randomUUID();
         SocketUser user = new SocketUser("user-1", "tester", "session-1", socketId.toString());
         when(client.get("user")).thenReturn(user);
-        when(userRooms.get(user.id())).thenReturn(Set.of("room-1"));
         when(client.getSessionId()).thenReturn(socketId);
         when(connectedUsers.get(user.id())).thenReturn(user);
 
         handler.onDisconnect(client);
 
-        verify(roomLeaveHandler).handleLeaveRoom(client, "room-1");
+        verify(userRooms, never()).get(user.id());
         verify(connectedUsers).del(user.id());
         verify(client).leaveRooms(Set.of("user:" + user.id(), "room-list"));
         verify(client).del("user");

@@ -20,6 +20,9 @@ public class SessionService {
     public static final long SESSION_TTL_SEC = DurationStyle.detectAndParse(SESSION_TTL).getSeconds();
     private static final long SESSION_TIMEOUT = SESSION_TTL_SEC * 1000;
 
+    // lastActivity와 expiresAt은 최대 30초에 한 번만 저장
+    private static final long SESSION_TOUCH_INTERVAL_MS = 30_000;
+
     private String generateSessionId() {
         return UUID.randomUUID().toString().replace("-", "");
     }
@@ -94,10 +97,14 @@ public class SessionService {
                 return SessionValidationResult.invalid("SESSION_EXPIRED", "세션이 만료되었습니다.");
             }
 
-            // Update last activity
-            session.setLastActivity(now);
-            session.setExpiresAt(Instant.now().plusSeconds(SESSION_TTL_SEC));
-            session = sessionStore.save(session);
+            // 최근에 갱신된 세션은 DB에 다시 저장하지 않는다.
+            if (now - session.getLastActivity() >= SESSION_TOUCH_INTERVAL_MS) {
+                session.setLastActivity(now);
+                session.setExpiresAt(
+                        Instant.ofEpochMilli(now).plusSeconds(SESSION_TTL_SEC)
+                );
+                session = sessionStore.save(session);
+            }
 
             SessionData sessionData = toSessionData(session);
             return SessionValidationResult.valid(sessionData);
