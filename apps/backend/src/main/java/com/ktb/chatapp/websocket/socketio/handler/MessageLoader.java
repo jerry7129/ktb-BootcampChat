@@ -3,14 +3,18 @@ package com.ktb.chatapp.websocket.socketio.handler;
 import com.ktb.chatapp.dto.FetchMessagesRequest;
 import com.ktb.chatapp.dto.FetchMessagesResponse;
 import com.ktb.chatapp.dto.MessageResponse;
+import com.ktb.chatapp.model.File;
 import com.ktb.chatapp.model.Message;
 import com.ktb.chatapp.model.User;
+import com.ktb.chatapp.repository.FileRepository;
 import com.ktb.chatapp.repository.MessageRepository;
 import com.ktb.chatapp.repository.UserRepository;
 import com.ktb.chatapp.service.MessageReadStatusService;
-import jakarta.annotation.Nullable;
 import java.time.LocalDateTime;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -29,6 +33,7 @@ public class MessageLoader {
 
     private final MessageRepository messageRepository;
     private final UserRepository userRepository;
+    private final FileRepository fileRepository;
     private final MessageResponseMapper messageResponseMapper;
     private final MessageReadStatusService messageReadStatusService;
 
@@ -66,13 +71,36 @@ public class MessageLoader {
         
         var messageIds = sortedMessages.stream().map(Message::getId).toList();
         messageReadStatusService.updateReadStatus(messageIds, userId);
-        
+
+        // 발신자/파일을 메시지마다 개별 조회(N+1)하지 않도록 배치로 한 번에 조회한다
+        Set<String> senderIds = sortedMessages.stream()
+                .map(Message::getSenderId)
+                .filter(java.util.Objects::nonNull)
+                .collect(Collectors.toSet());
+        // Map.of()는 get(null)에서 NPE를 던지므로(메시지 대부분은 senderId/fileId가 null일 수 있음)
+        // 빈 경우에도 null-key 조회가 안전한 HashMap을 사용한다.
+        Map<String, User> usersById = new HashMap<>();
+        if (!senderIds.isEmpty()) {
+            userRepository.findAllById(senderIds)
+                    .forEach(user -> usersById.put(user.getId(), user));
+        }
+
+        Set<String> fileIds = sortedMessages.stream()
+                .map(Message::getFileId)
+                .filter(java.util.Objects::nonNull)
+                .collect(Collectors.toSet());
+        Map<String, File> filesById = new HashMap<>();
+        if (!fileIds.isEmpty()) {
+            fileRepository.findAllById(fileIds)
+                    .forEach(file -> filesById.put(file.getId(), file));
+        }
+
         // 메시지 응답 생성
         List<MessageResponse> messageResponses = sortedMessages.stream()
-                .map(message -> {
-                    var user = findUserById(message.getSenderId());
-                    return messageResponseMapper.mapToMessageResponse(message, user);
-                })
+                .map(message -> messageResponseMapper.mapToMessageResponse(
+                        message,
+                        usersById.get(message.getSenderId()),
+                        filesById.get(message.getFileId())))
                 .collect(Collectors.toList());
 
         boolean hasMore = messagePage.hasNext();
@@ -84,17 +112,5 @@ public class MessageLoader {
                 .messages(messageResponses)
                 .hasMore(hasMore)
                 .build();
-    }
-
-    /**
-     * AI 경우 null 반환 가능
-     */
-    @Nullable
-    private User findUserById(String id) {
-        if (id == null) {
-            return null;
-        }
-        return userRepository.findById(id)
-                .orElse(null);
     }
 }
