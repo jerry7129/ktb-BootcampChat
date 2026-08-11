@@ -27,9 +27,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.BadCredentialsException;
-import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
@@ -44,7 +42,6 @@ import org.springframework.web.bind.annotation.*;
 @RequestMapping("/api/auth")
 public class AuthController {
 
-    private final AuthenticationManager authenticationManager;
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
     private final JwtService jwtService;
@@ -161,19 +158,16 @@ public class AuthController {
         // Handle validation errors
         ResponseEntity<?> errors = getBindingError(bindingResult);
         if (errors != null) return errors;
-        
+
         try {
             // Authenticate user
+            // 사용자를 한 번만 조회한 뒤 저장된 BCrypt 해시와 비밀번호 비교
             User user = userRepository.findByEmail(loginRequest.getEmail().toLowerCase())
                     .orElseThrow(() -> new UsernameNotFoundException("User not found"));
-            Authentication authentication = authenticationManager.authenticate(
-                    new UsernamePasswordAuthenticationToken(
-                            user.getEmail(),
-                            loginRequest.getPassword()
-                    )
-            );
 
-            SecurityContextHolder.getContext().setAuthentication(authentication);
+            if (!passwordEncoder.matches(loginRequest.getPassword(), user.getPassword())) {
+                throw new BadCredentialsException("Invalid credentials");
+            }
 
             // Create new session
             SessionMetadata metadata = new SessionMetadata(
