@@ -107,20 +107,20 @@ export const AuthProviderWithRouter = ({ children, router }) => {
 
   // 로그아웃 (API 호출 + 상태 정리)
   const logout = useCallback(async () => {
+    // 서버 세션 삭제는 best effort로 시작하되, 네트워크 응답 때문에 로컬 로그아웃이
+    // 늦어지지 않게 한다. 로컬 상태가 남아 있으면 /login, /register의 withoutAuth가
+    // 사용자를 다시 /chat으로 보내는 경합이 생길 수 있다.
+    const logoutRequest = authService.logout(user?.token, user?.sessionId);
+
+    // 소켓과 로컬 인증 상태를 먼저 정리해 보호/비인증 라우트가 즉시 일관된 상태를 본다.
+    socketService.disconnect();
+    saveUser(null);
+    router.push('/login');
+
     try {
-      // authService를 통해 로그아웃 API 호출
-      await authService.logout(user?.token, user?.sessionId);
+      await logoutRequest;
     } catch (error) {
       console.error('Logout error:', error);
-    } finally {
-      // 소켓 연결 해제
-      socketService.disconnect();
-
-      // 로컬 상태 정리
-      saveUser(null);
-
-      // 로그인 페이지로 이동
-      router.push('/login');
     }
   }, [user, saveUser, router]);
 
