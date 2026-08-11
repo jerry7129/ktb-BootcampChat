@@ -4,7 +4,7 @@ import com.corundumstudio.socketio.SocketIOClient;
 import com.corundumstudio.socketio.SocketIOServer;
 import com.corundumstudio.socketio.annotation.OnEvent;
 import com.ktb.chatapp.dto.MessageResponse;
-import com.ktb.chatapp.dto.UserResponse;
+import com.ktb.chatapp.dto.ParticipantUpdateResponse;
 import com.ktb.chatapp.model.Message;
 import com.ktb.chatapp.model.MessageType;
 import com.ktb.chatapp.model.Room;
@@ -18,7 +18,6 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Map;
-import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -28,7 +27,7 @@ import static com.ktb.chatapp.websocket.socketio.SocketIOEvents.*;
 
 /**
  * 방 퇴장 처리 핸들러
- * 채팅방 퇴장, 스트리밍 세션 종료, 참가자 목록 업데이트 담당
+ * 채팅방 퇴장, 스트리밍 세션 종료, 참가자 퇴장 delta 업데이트 담당
  */
 @Slf4j
 @Component
@@ -68,6 +67,9 @@ public class RoomLeaveHandler {
             }
             
             roomRepository.removeParticipant(roomId, userId);
+            int participantsCount = room.getParticipantIds().contains(userId)
+                    ? Math.max(0, room.getParticipantIds().size() - 1)
+                    : room.getParticipantIds().size();
             
             client.leaveRoom(roomId);
             userRooms.remove(userId, roomId);
@@ -77,7 +79,9 @@ public class RoomLeaveHandler {
             log.debug("Leave room cleanup - roomId: {}, userId: {}", roomId, userId);
             
             sendSystemMessage(roomId, userName + "님이 퇴장하였습니다.");
-            broadcastParticipantList(roomId);
+            socketIOServer.getRoomOperations(roomId)
+                    .sendEvent(PARTICIPANTS_UPDATE,
+                            ParticipantUpdateResponse.left(userId, participantsCount));
 
         } catch (Exception e) {
             log.error("Error handling leaveRoom", e);
@@ -108,26 +112,6 @@ public class RoomLeaveHandler {
         }
     }
     
-    private void broadcastParticipantList(String roomId) {
-        Optional<Room> roomOpt = roomRepository.findById(roomId);
-        if (roomOpt.isEmpty()) {
-            return;
-        }
-        
-        // 개별 findById 대신 배치 조회로 N+1 방지
-        var participantList = userRepository.findAllById(roomOpt.get().getParticipantIds())
-                .stream()
-                .map(UserResponse::from)
-                .toList();
-        
-        if (participantList.isEmpty()) {
-            return;
-        }
-        
-        socketIOServer.getRoomOperations(roomId)
-                .sendEvent(PARTICIPANTS_UPDATE, participantList);
-    }
-
     private SocketUser getUserDto(SocketIOClient client) {
         return client.get("user");
     }

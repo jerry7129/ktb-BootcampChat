@@ -148,6 +148,12 @@ describe('roomEventHandlers', () => {
     });
 
     handlers.onParticipantsUpdate([{ _id: 'user-1' }]);
+    handlers.onParticipantsUpdate({
+      type: 'joined',
+      participant: { id: 'user-2' },
+      participantsCount: 2,
+    });
+    handlers.onParticipantsUpdate({ type: 'left', userId: 'user-1', participantsCount: 1 });
     handlers.onMessagesRead({
       userId: 'user-1',
       messageIds: ['message-1'],

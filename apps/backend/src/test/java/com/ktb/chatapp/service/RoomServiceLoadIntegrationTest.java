@@ -101,18 +101,17 @@ class RoomServiceLoadIntegrationTest {
         log.info("getAllRooms: room={}, participantsPerRoom={} -> Mongo 쿼리 {}건 발생",
                 ROOM_COUNT, PARTICIPANTS_PER_ROOM, queriesIssued);
 
-        // 데이터 정합성: 방 개수가 맞고, 방마다 생성자/참가자가 실제로 채워졌는지
+        // 목록 응답은 생성자와 참여자 수만 채우며 전체 참여자 목록은 제외한다.
         assertThat(response.isSuccess()).isTrue();
         assertThat(response.getData()).hasSize(ROOM_COUNT);
         for (RoomResponse roomResponse : response.getData()) {
             assertThat(roomResponse.getCreator()).isNotNull();
             assertThat(roomResponse.getCreator().getName()).isNotBlank();
-            assertThat(roomResponse.getParticipants()).isNotEmpty();
-            roomResponse.getParticipants().forEach(p -> assertThat(p.getName()).isNotBlank());
+            assertThat(roomResponse.getParticipants()).isNull();
+            assertThat(roomResponse.getParticipantsCount()).isPositive();
         }
 
-        // N+1이 남아있었다면 방(30) x 참가자(약 9) = 270+ 개별 쿼리가 나갔어야 한다.
-        // 배치 조회로 고친 뒤에는 방 개수와 무관하게 상수(findAll 1 + findAllById 1 + aggregate 1 근처)여야 한다.
+        // 생성자만 배치 조회하므로 Mongo 쿼리는 방 개수와 무관해야 한다.
         assertThat(queriesIssued)
                 .as("방 개수(%d)에 비례하지 않는 적은 쿼리 수여야 함", ROOM_COUNT)
                 .isLessThan(ROOM_COUNT);

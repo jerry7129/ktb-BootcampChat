@@ -2,7 +2,6 @@ package com.ktb.chatapp.websocket.socketio;
 
 import java.time.Duration;
 import java.util.Optional;
-import java.util.Set;
 import org.springframework.data.redis.core.RedisTemplate;
 
 /**
@@ -49,11 +48,4 @@ public class RedisChatDataStore implements ChatDataStore {
         redisTemplate.delete(key(key));
     }
 
-    @Override
-    public int size() {
-        // logging-only metric (see ConnectionLoginHandler) — KEYS is fine at
-        // this scale but would need SCAN if the key space grows much larger.
-        Set<String> keys = redisTemplate.keys(KEY_PREFIX + "*");
-        return keys != null ? keys.size() : 0;
-    }
 }

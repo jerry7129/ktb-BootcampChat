@@ -25,10 +25,6 @@ public class ConnectedUsers {
         chatDataStore.delete(buildKey(userId));
     }
     
-    public int size() {
-        return chatDataStore.size();
-    }
-    
     private String buildKey(String userId) {
         return USER_SOCKET_KEY_PREFIX + userId;
     }

@@ -87,10 +87,7 @@ public final class SocketIOEvents {
      */
     public static final String PREVIOUS_MESSAGES_LOADED = "previousMessagesLoaded";
 
-    /**
-     * 참가자 업데이트
-     * Payload: List<UserDto>
-     */
+    /** 참가자 증분 업데이트. Payload: ParticipantUpdateResponse. */
     public static final String PARTICIPANTS_UPDATE = "participantsUpdate";
 
     /**

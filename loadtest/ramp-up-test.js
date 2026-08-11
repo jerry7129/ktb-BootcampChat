@@ -70,7 +70,7 @@
  *      - Messages/sec: 초당 메시지 처리량
  *      - Reactions Sent: 전송한 리액션 수
  *      - Reaction Updates Recv: 리액션 갱신 수신 수 (방 브로드캐스트라 송신보다 큼)
- *      - Participants Updates: 참여자 목록 갱신 수신 수
+ *      - Participants Updates: 참여자 입장/퇴장 증분 갱신 수신 수
  *      - Session Ended Recv: 세션 종료 통지 수신 수
  *
  *    성능 메트릭:

@@ -13,6 +13,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.Executors;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import jakarta.annotation.PreDestroy;
@@ -38,6 +39,7 @@ public class ConnectionLoginHandler {
     private final UserRooms userRooms;
     private final RoomJoinHandler roomJoinHandler;
     private final ScheduledExecutorService duplicateLoginScheduler;
+    private final Set<String> localSocketIds = ConcurrentHashMap.newKeySet();
 
     @Autowired
     public ConnectionLoginHandler(
@@ -68,7 +70,7 @@ public class ConnectionLoginHandler {
         this.duplicateLoginScheduler = duplicateLoginScheduler;
 
         // Register gauge metric for concurrent users
-        Gauge.builder("socketio.concurrent.users", connectedUsers::size)
+        Gauge.builder("socketio.concurrent.users", localSocketIds, Set::size)
                 .description("Current number of concurrent Socket.IO users")
                 .register(meterRegistry);
     }
@@ -90,10 +92,10 @@ public class ConnectionLoginHandler {
             });
             
             connectedUsers.set(userId, user);
+            localSocketIds.add(user.socketId());
 
-            // 동시 접속자 수는 Prometheus gauge(socketio.concurrent.users)로 이미 노출 중이라
-            // 여기서는 재조회하지 않는다. connectedUsers.size()는 Redis KEYS 스캔이라
-            // 연결마다 부르면 접속자가 늘수록 접속 자체가 느려진다.
+            // 이 인스턴스의 socket ID는 로컬 Set에 기록하며 Prometheus에서 인스턴스별
+            // socketio.concurrent.users를 합산한다. 접속자 측정을 위한 Redis 조회는 없다.
             log.info("Socket.IO user connected: {} ({})", getUserName(client), userId);
 
             client.joinRooms(Set.of(
@@ -120,13 +122,13 @@ public class ConnectionLoginHandler {
     public void onDisconnect(SocketIOClient client) {
         String userId = getUserId(client);
         String userName = getUserName(client);
+        String socketId = client.getSessionId().toString();
 
         try {
+            localSocketIds.remove(socketId);
             if (userId == null) {
                 return;
             }
-
-            String socketId = client.getSessionId().toString();
             
             // 해당 사용자의 현재 활성 연결인 경우에만 정리
             var socketUser = connectedUsers.get(userId);

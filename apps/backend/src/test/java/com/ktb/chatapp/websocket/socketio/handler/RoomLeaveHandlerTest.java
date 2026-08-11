@@ -4,7 +4,7 @@ import com.corundumstudio.socketio.BroadcastOperations;
 import com.corundumstudio.socketio.SocketIOClient;
 import com.corundumstudio.socketio.SocketIOServer;
 import com.ktb.chatapp.dto.MessageResponse;
-import com.ktb.chatapp.dto.UserResponse;
+import com.ktb.chatapp.dto.ParticipantUpdateResponse;
 import com.ktb.chatapp.model.Message;
 import com.ktb.chatapp.model.MessageType;
 import com.ktb.chatapp.model.Room;
@@ -15,7 +15,6 @@ import com.ktb.chatapp.repository.UserRepository;
 import com.ktb.chatapp.websocket.socketio.SocketUser;
 import com.ktb.chatapp.websocket.socketio.UserRooms;
 import java.time.LocalDateTime;
-import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import org.junit.jupiter.api.BeforeEach;
@@ -74,16 +73,10 @@ class RoomLeaveHandlerTest {
     void handleLeaveRoom_removesParticipantAndBroadcasts() {
         SocketUser socketUser = new SocketUser("user-1", "tester", "session-1", "socket-1");
         User user = User.builder().id("user-1").name("tester").email("tester@example.com").build();
-        User remainingUser = User.builder().id("user-2").name("remaining").email("remaining@example.com").build();
         Room roomBeforeLeave = Room.builder()
                 .id("room-1")
                 .name("room")
                 .participantIds(Set.of("user-1", "user-2"))
-                .build();
-        Room roomAfterLeave = Room.builder()
-                .id("room-1")
-                .name("room")
-                .participantIds(Set.of("user-2"))
                 .build();
         MessageResponse leaveMessageResponse = MessageResponse.builder()
                 .id("message-1")
@@ -96,9 +89,7 @@ class RoomLeaveHandlerTest {
         when(client.get("user")).thenReturn(socketUser);
         when(userRooms.isInRoom("user-1", "room-1")).thenReturn(true);
         when(userRepository.findById("user-1")).thenReturn(Optional.of(user));
-        when(userRepository.findAllById(Set.of("user-2"))).thenReturn(List.of(remainingUser));
-        when(roomRepository.findById("room-1"))
-                .thenReturn(Optional.of(roomBeforeLeave), Optional.of(roomAfterLeave));
+        when(roomRepository.findById("room-1")).thenReturn(Optional.of(roomBeforeLeave));
         when(messageRepository.save(any(Message.class))).thenAnswer(invocation -> {
             Message message = invocation.getArgument(0);
             message.setId("message-1");
@@ -115,11 +106,12 @@ class RoomLeaveHandlerTest {
         verify(client).leaveRoom("room-1");
         verify(userRooms).remove("user-1", "room-1");
         verify(roomOperations).sendEvent(MESSAGE, leaveMessageResponse);
-        ArgumentCaptor<Object> participantsCaptor = ArgumentCaptor.forClass(Object.class);
-        verify(roomOperations).sendEvent(eq(PARTICIPANTS_UPDATE), participantsCaptor.capture());
-        @SuppressWarnings("unchecked")
-        var participants = (java.util.List<UserResponse>) participantsCaptor.getValue();
-        assertEquals(List.of("user-2"), participants.stream().map(UserResponse::getId).toList());
+        ArgumentCaptor<ParticipantUpdateResponse> deltaCaptor =
+                ArgumentCaptor.forClass(ParticipantUpdateResponse.class);
+        verify(roomOperations).sendEvent(eq(PARTICIPANTS_UPDATE), deltaCaptor.capture());
+        assertEquals("left", deltaCaptor.getValue().type());
+        assertEquals("user-1", deltaCaptor.getValue().userId());
+        assertEquals(1, deltaCaptor.getValue().participantsCount());
         verify(roomOperations, never()).sendEvent(eq("userLeft"), any());
     }
 }

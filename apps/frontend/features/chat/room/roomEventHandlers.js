@@ -103,9 +103,32 @@ export const createRoomEventHandlers = ({
   };
 
   return {
-    onParticipantsUpdate: (participants) => {
+    onParticipantsUpdate: (update) => {
       if (!mountedRef.current) return;
-      setRoom(prev => ({ ...prev, participants: participants || [] }));
+      setRoom(prev => {
+        // 구형 전체 배열 payload도 허용하되, 현재 서버는 delta 객체를 보낸다.
+        if (Array.isArray(update)) {
+          return { ...prev, participants: update, participantsCount: update.length };
+        }
+        const participants = prev?.participants || [];
+        if (update?.type === 'joined' && update.participant) {
+          const participantId = update.participant.id || update.participant._id;
+          const exists = participants.some(item => (item.id || item._id) === participantId);
+          return {
+            ...prev,
+            participants: exists ? participants : [...participants, update.participant],
+            participantsCount: update.participantsCount,
+          };
+        }
+        if (update?.type === 'left' && update.userId) {
+          return {
+            ...prev,
+            participants: participants.filter(item => (item.id || item._id) !== update.userId),
+            participantsCount: update.participantsCount,
+          };
+        }
+        return prev;
+      });
     },
     onMessagesRead: (payload) => {
       if (!mountedRef.current) return;

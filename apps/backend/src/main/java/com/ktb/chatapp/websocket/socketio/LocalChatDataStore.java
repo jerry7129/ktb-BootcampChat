@@ -35,8 +35,4 @@ public class LocalChatDataStore implements ChatDataStore {
         storage.remove(key);
     }
     
-    @Override
-    public int size() {
-        return storage.size();
-    }
 }

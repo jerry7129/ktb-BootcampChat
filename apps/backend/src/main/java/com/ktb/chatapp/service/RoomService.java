@@ -42,8 +42,8 @@ public class RoomService {
     // 부하 테스트가 반복될수록 방 데이터가 계속 쌓이는데, findAll()로 전체를 매번 읽어와
     // 정렬하면 방 개수에 비례해 이 호출이 느려진다. 목록 화면은 어차피 최신 방 위주로
     // 보여주면 충분하므로 최신순 상한을 두고 그 이상은 DB에 정렬을 맡긴다(인덱스 없이도
-    // limit 덕분에 전체 문서를 메모리에 올리지 않는다). 방 생성/조회/입장 API와 응답
-    // 필드는 그대로이므로 랜덤 입장 버튼을 쓰는 E2E 시나리오와도 호환된다.
+    // limit 덕분에 전체 문서를 메모리에 올리지 않는다). 목록 응답은 참여자 상세 대신
+    // participantIds의 크기로 계산한 participantsCount만 제공한다.
     @Value("${chatapp.room-list.max-size:200}")
     private int roomListMaxSize;
 
@@ -54,7 +54,7 @@ public class RoomService {
                 PageRequest.of(0, roomListMaxSize, Sort.by(Sort.Direction.DESC, "createdAt")));
             List<Room> rooms = roomPage.getContent();
 
-            // 방마다 참가자/생성자를 개별 조회(N+1)하지 않도록 전체 유저 ID를 모아 한 번에 조회한다
+            // 목록에서는 생성자만 조회한다. 참여자 수는 이미 읽은 participantIds의 크기로 계산한다.
             Set<String> userIds = new HashSet<>();
             List<String> roomIds = new java.util.ArrayList<>(rooms.size());
             for (Room room : rooms) {
@@ -62,7 +62,6 @@ public class RoomService {
                 if (room.getCreator() != null) {
                     userIds.add(room.getCreator());
                 }
-                userIds.addAll(room.getParticipantIds());
             }
             Map<String, User> usersById = new HashMap<>();
             if (!userIds.isEmpty()) {
@@ -74,7 +73,7 @@ public class RoomService {
             Map<String, Integer> recentMessageCounts = recentMessageCounter.countRecentMessages(roomIds);
 
             List<RoomResponse> roomResponses = rooms.stream()
-                .map(room -> mapToRoomResponse(room, name, usersById,
+                .map(room -> mapToRoomListResponse(room, name, usersById,
                     recentMessageCounts.getOrDefault(room.getId(), 0)))
                 .sorted(Comparator.comparing(
                     RoomResponse::getCreatedAtDateTime,
@@ -273,6 +272,23 @@ public class RoomService {
                     .email(p.getEmail() != null ? p.getEmail() : "")
                     .build())
                 .collect(Collectors.toList()))
+            .participantsCount(room.getParticipantIds().size())
+            .createdAtDateTime(room.getCreatedAt())
+            .isCreator(creator != null && creator.getId().equals(name))
+            .recentMessageCount(recentMessageCount)
+            .build();
+    }
+
+    private RoomResponse mapToRoomListResponse(
+            Room room, String name, Map<String, User> usersById, int recentMessageCount) {
+        User creator = room.getCreator() != null ? usersById.get(room.getCreator()) : null;
+        return RoomResponse.builder()
+            .id(room.getId())
+            .name(room.getName() != null ? room.getName() : "제목 없음")
+            .hasPassword(room.isHasPassword())
+            .creator(creator != null ? UserResponse.from(creator) : null)
+            .participants(null)
+            .participantsCount(room.getParticipantIds().size())
             .createdAtDateTime(room.getCreatedAt())
             .isCreator(creator != null && creator.getId().equals(name))
             .recentMessageCount(recentMessageCount)

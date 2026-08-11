@@ -6,6 +6,7 @@ import com.corundumstudio.socketio.SocketIOServer;
 import com.ktb.chatapp.dto.FetchMessagesRequest;
 import com.ktb.chatapp.dto.FetchMessagesResponse;
 import com.ktb.chatapp.dto.MessageResponse;
+import com.ktb.chatapp.dto.ParticipantUpdateResponse;
 import com.ktb.chatapp.model.Message;
 import com.ktb.chatapp.model.MessageType;
 import com.ktb.chatapp.model.Room;
@@ -17,6 +18,7 @@ import com.ktb.chatapp.websocket.socketio.SocketUser;
 import com.ktb.chatapp.websocket.socketio.UserRooms;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.HashSet;
 import java.util.Optional;
 import java.util.Set;
 import org.junit.jupiter.api.BeforeEach;
@@ -29,6 +31,7 @@ import static com.ktb.chatapp.websocket.socketio.SocketIOEvents.JOIN_ROOM_ERROR;
 import static com.ktb.chatapp.websocket.socketio.SocketIOEvents.JOIN_ROOM_SUCCESS;
 import static com.ktb.chatapp.websocket.socketio.SocketIOEvents.MESSAGE;
 import static com.ktb.chatapp.websocket.socketio.SocketIOEvents.PARTICIPANTS_UPDATE;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
@@ -76,7 +79,8 @@ class RoomJoinHandlerTest {
     void handleJoinRoom_addsParticipantLoadsMessagesAndBroadcasts() {
         SocketUser socketUser = new SocketUser("user-1", "tester", "session-1", "socket-1");
         User user = User.builder().id("user-1").name("tester").email("tester@example.com").build();
-        Room room = Room.builder().id("room-1").name("room").participantIds(Set.of("user-1")).build();
+        Room room = Room.builder().id("room-1").name("room")
+                .participantIds(new HashSet<>()).build();
         MessageResponse joinMessageResponse = MessageResponse.builder()
                 .id("message-1")
                 .roomId("room-1")
@@ -112,6 +116,10 @@ class RoomJoinHandlerTest {
         verify(userRooms).add("user-1", "room-1");
         verify(client).sendEvent(eq(JOIN_ROOM_SUCCESS), any());
         verify(roomOperations).sendEvent(MESSAGE, joinMessageResponse);
-        verify(roomOperations).sendEvent(eq(PARTICIPANTS_UPDATE), any());
+        var deltaCaptor = org.mockito.ArgumentCaptor.forClass(ParticipantUpdateResponse.class);
+        verify(roomOperations).sendEvent(eq(PARTICIPANTS_UPDATE), deltaCaptor.capture());
+        assertEquals("joined", deltaCaptor.getValue().type());
+        assertEquals("user-1", deltaCaptor.getValue().participant().getId());
+        assertEquals(1, deltaCaptor.getValue().participantsCount());
     }
 }

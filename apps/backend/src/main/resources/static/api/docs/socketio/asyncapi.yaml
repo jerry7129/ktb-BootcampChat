@@ -149,7 +149,7 @@ channels:
     messages:
       participantsUpdateResponse:
         $ref: '#/components/messages/ParticipantsUpdateResponse'
-    description: 참가자 업데이트
+    description: 참가자 입장/퇴장 증분 업데이트
 
   roomCreated:
     address: roomCreated
@@ -346,8 +346,8 @@ operations:
     action: receive
     channel:
       $ref: '#/channels/participantsUpdate'
-    summary: 참가자 업데이트 수신
-    description: 서버가 참가자 목록 업데이트를 알립니다.
+    summary: 참가자 증분 업데이트 수신
+    description: 서버가 참가자 한 명의 입장 또는 퇴장을 알립니다.
 
   receiveRoomCreated:
     action: receive
@@ -544,12 +544,21 @@ components:
     ParticipantsUpdateResponse:
       name: ParticipantsUpdate
       title: 참가자 업데이트
-      summary: 참가자 목록 업데이트 페이로드
+      summary: 참가자 입장/퇴장 증분 업데이트 페이로드
       contentType: application/json
       payload:
-        type: array
-        items:
-          $ref: '#/components/schemas/UserResponse'
+        type: object
+        required: [type, userId, participantsCount]
+        properties:
+          type:
+            type: string
+            enum: [joined, left]
+          participant:
+            $ref: '#/components/schemas/UserResponse'
+          userId:
+            type: string
+          participantsCount:
+            type: integer
 
     RoomResponse:
       name: RoomResponse

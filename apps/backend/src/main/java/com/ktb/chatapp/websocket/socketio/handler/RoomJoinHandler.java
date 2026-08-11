@@ -6,10 +6,12 @@ import com.corundumstudio.socketio.annotation.OnEvent;
 import com.ktb.chatapp.dto.FetchMessagesRequest;
 import com.ktb.chatapp.dto.FetchMessagesResponse;
 import com.ktb.chatapp.dto.JoinRoomSuccessResponse;
+import com.ktb.chatapp.dto.ParticipantUpdateResponse;
 import com.ktb.chatapp.dto.UserResponse;
 import com.ktb.chatapp.model.Message;
 import com.ktb.chatapp.model.MessageType;
 import com.ktb.chatapp.model.Room;
+import com.ktb.chatapp.model.User;
 import com.ktb.chatapp.repository.MessageRepository;
 import com.ktb.chatapp.repository.RoomRepository;
 import com.ktb.chatapp.repository.UserRepository;
@@ -54,15 +56,19 @@ public class RoomJoinHandler {
                 return;
             }
             
-            if (userRepository.findById(userId).isEmpty()) {
+            Optional<User> userOpt = userRepository.findById(userId);
+            if (userOpt.isEmpty()) {
                 client.sendEvent(JOIN_ROOM_ERROR, Map.of("message", "User not found"));
                 return;
             }
-            
-            if (roomRepository.findById(roomId).isEmpty()) {
+
+            Optional<Room> roomOpt = roomRepository.findById(roomId);
+            if (roomOpt.isEmpty()) {
                 client.sendEvent(JOIN_ROOM_ERROR, Map.of("message", "채팅방을 찾을 수 없습니다."));
                 return;
             }
+            User user = userOpt.get();
+            Room room = roomOpt.get();
             
             // 이미 해당 방에 참여 중인지 확인
             if (userRooms.isInRoom(userId, roomId)) {
@@ -73,6 +79,7 @@ public class RoomJoinHandler {
             }
 
             roomRepository.addParticipant(roomId, userId);
+            room.addParticipant(userId);
 
             // Join socket room and add to user's room set
             client.joinRoom(roomId);
@@ -95,15 +102,8 @@ public class RoomJoinHandler {
             FetchMessagesRequest req = new FetchMessagesRequest(roomId, 30, null);
             FetchMessagesResponse messageLoadResult = messageLoader.loadMessages(req, userId);
 
-            // 업데이트된 room 다시 조회하여 최신 participantIds 가져오기
-            Optional<Room> roomOpt = roomRepository.findById(roomId);
-            if (roomOpt.isEmpty()) {
-                client.sendEvent(JOIN_ROOM_ERROR, Map.of("message", "채팅방을 찾을 수 없습니다."));
-                return;
-            }
-
             // 참가자 정보 조회 (개별 findById 대신 배치 조회로 N+1 방지)
-            List<UserResponse> participants = userRepository.findAllById(roomOpt.get().getParticipantIds())
+            List<UserResponse> participants = userRepository.findAllById(room.getParticipantIds())
                     .stream()
                     .map(UserResponse::from)
                     .toList();
@@ -122,9 +122,10 @@ public class RoomJoinHandler {
             socketIOServer.getRoomOperations(roomId)
                 .sendEvent(MESSAGE, messageResponseMapper.mapToMessageResponse(joinMessage, null));
 
-            // 참가자 목록 업데이트 브로드캐스트
+            // 전체 목록 대신 새 참가자 한 명만 브로드캐스트한다.
             socketIOServer.getRoomOperations(roomId)
-                .sendEvent(PARTICIPANTS_UPDATE, participants);
+                .sendEvent(PARTICIPANTS_UPDATE, ParticipantUpdateResponse.joined(
+                    UserResponse.from(user), room.getParticipantIds().size()));
 
             log.info("User {} joined room {} successfully. Message count: {}, hasMore: {}",
                 userName, roomId, messageLoadResult.getMessages().size(), messageLoadResult.isHasMore());

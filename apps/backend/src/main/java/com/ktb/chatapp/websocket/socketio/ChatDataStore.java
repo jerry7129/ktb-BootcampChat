@@ -33,5 +33,4 @@ public interface ChatDataStore {
      */
     void delete(String key);
     
-    int size();
 }
