@@ -24,6 +24,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
+import org.springframework.data.domain.Page;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
@@ -49,11 +50,9 @@ public class RoomService {
     public RoomsResponse getAllRooms(String name) {
 
         try {
-            int pageSize = Math.max(1, roomListMaxSize);
-            List<Room> fetchedRooms = roomRepository.findRooms(
-                PageRequest.of(0, pageSize + 1, Sort.by(Sort.Direction.DESC, "createdAt")));
-            boolean hasMore = fetchedRooms.size() > pageSize;
-            List<Room> rooms = hasMore ? fetchedRooms.subList(0, pageSize) : fetchedRooms;
+            Page<Room> roomPage = roomRepository.findAll(
+                PageRequest.of(0, roomListMaxSize, Sort.by(Sort.Direction.DESC, "createdAt")));
+            List<Room> rooms = roomPage.getContent();
 
             // 목록에서는 생성자만 조회한다. 참여자 수는 이미 읽은 participantIds의 크기로 계산한다.
             Set<String> userIds = new HashSet<>();
@@ -81,12 +80,13 @@ public class RoomService {
                     Comparator.nullsLast(Comparator.reverseOrder())))
                 .collect(Collectors.toList());
 
+            long total = roomPage.getTotalElements();
             PageMetadata metadata = PageMetadata.builder()
-                .total(roomResponses.size() + (hasMore ? 1 : 0))
+                .total(total)
                 .page(0)
-                .pageSize(pageSize)
-                .totalPages(hasMore ? 2 : 1)
-                .hasMore(hasMore)
+                .pageSize(roomListMaxSize)
+                .totalPages(roomPage.getTotalPages())
+                .hasMore(total > roomResponses.size())
                 .currentCount(roomResponses.size())
                 .build();
 
